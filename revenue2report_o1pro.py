@@ -336,7 +336,7 @@ def generate_report(
     out_file_id = create_new_spreadsheet(out_filename, folder_id, drive_svc)
     out_sh = gc.open_by_key(out_file_id)
     
-    time.sleep(0.5)
+    time.sleep(2)
     # sheet1 삭제
     try:
         out_sh.del_worksheet(out_sh.sheet1)
@@ -355,7 +355,7 @@ def generate_report(
         pr = (i+1)/num_art
         progress_bar.progress(pr)
         st.info(f"[{i+1}/{num_art}] 현재 처리중: '{artist}'")
-        time.sleep(0.2)
+        time.sleep(4)
 
         # ----------------------------
         # 세부매출내역 탭
@@ -727,7 +727,9 @@ def generate_report(
         row_cursor_report_end = row_cursor + 2
 
         # (2) 시트에 업데이트
-        ws_report.update("A1", report_matrix)
+        ws_report.update(
+            range_name="A1",
+            values=report_matrix)
         ws_report.resize(rows=row_cursor_report_end, cols=8)
 
         # (3) 한 번의 batchUpdate: 열너비, 행높이, 병합, 서식, 테두리 ...
