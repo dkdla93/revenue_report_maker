@@ -5,7 +5,6 @@ import re
 import time
 import io
 import zipfile
-import requests as req
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -112,28 +111,12 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for (gid, title) in tabs:
-            # (1) 다운로드
-            content = None
-            for attempt in range(3):  # 재시도 3번 예시
-                try:
-                    content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
-                    break
-                except req.exceptions.HTTPError as e:
-                    # 429, 503 등 일시적 에러면 time.sleep 후 재시도
-                    if e.response.status_code in (429, 503):
-                        sleep_sec = 2 ** attempt  # 지수 백오프 예
-                        time.sleep(sleep_sec)
-                    else:
-                        raise e
-            
-            if content is None:
-                raise RuntimeError(f"Download failed after retries (gid={gid}, title={title})")
-
-            # (2) Zip에 추가
+            content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
             zf.writestr(f"{title}.xlsx", content)
+            time.sleep(1)
 
-            # (3) 루프간 sleep
-            time.sleep(2)  # 시트마다 0.5~1초 대기
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue()
 
 
 # ========== [3] 보조 유틸 함수들 ===========
