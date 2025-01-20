@@ -336,9 +336,10 @@ def generate_report(
     out_file_id = create_new_spreadsheet(out_filename, folder_id, drive_svc)
     out_sh = gc.open_by_key(out_file_id)
     
+    time.sleep(0.5)
+    # sheet1 삭제
     try:
-        default_ws = out_sh.worksheet("Sheet1")
-        out_sh.del_worksheet(default_ws)
+        out_sh.del_worksheet(out_sh.sheet1)
     except:
         pass
 
