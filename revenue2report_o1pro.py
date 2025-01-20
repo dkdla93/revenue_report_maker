@@ -5,7 +5,7 @@ import re
 import time
 import io
 import zipfile
-import requests
+import requests as req
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -111,7 +111,7 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
                 resp = session.get(url, params=params)
                 resp.raise_for_status()
                 return resp.content
-            except requests.exceptions.HTTPError as e:
+            except req.exceptions.HTTPError as e:
                 # 429나 503처럼 “잠시 후 재시도”가 유효한 에러에 한해서 backoff
                 if e.response.status_code in [429, 503]:
                     sleep_sec = 2 ** attempt  # 간단한 지수백오프
