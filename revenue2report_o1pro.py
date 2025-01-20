@@ -31,7 +31,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 SERVICE_ACCOUNT_FILE = st.secrets["google_service_account"]  # 본인 환경에 맞게 수정
-FOLDER_ID = "19lpAoCxQBzMKiLikOwfX1GSw1vWk_4qr"  # 본인 폴더 ID
+
 
 credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 gc = gspread.authorize(credentials)
