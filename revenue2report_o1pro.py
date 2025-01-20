@@ -1232,7 +1232,10 @@ def generate_report(ym, report_date, check_dict,
         detail_matrix.append(["합계", "", "", "", "", "", to_currency(total_detail)])
 
         # 시트에 업데이트
-        ws_detail.update("A1", detail_matrix)
+        ws_detail.update(
+            range_name="A1",
+            values=detail_matrix
+        )
         row_cursor_detail_end = len(detail_matrix)
         ws_detail.resize(rows=row_cursor_detail_end, cols=7)
 
@@ -1267,7 +1270,13 @@ def generate_report(ym, report_date, check_dict,
 
         # 테두리
         sheet_id = ws_detail.id
-        apply_black_borders_to_worksheet(out_file_id, ws_detail.id, row_cursor_detail_end, 7)
+        apply_black_borders_to_worksheet(
+            spreadsheet_id=out_file_id,
+            sheet_id=ws_detail.id,
+            max_rows=row_cursor_detail_end,
+            max_cols=7,
+            sheet_svc=sheet_svc  # <-- 추가
+        )
 
 
         # ---------------------------
@@ -1443,7 +1452,10 @@ def generate_report(ym, report_date, check_dict,
         report_matrix[row_cursor][6] = "* 부가세 별도"
         row_cursor_report_end = row_cursor + 2
 
-        ws_report.update("A1", report_matrix)
+        ws_report.update(
+            range_name="A1",
+            values=report_matrix
+        )
         ws_report.resize(rows=row_cursor_report_end, cols=8)
 
 
@@ -1533,7 +1545,11 @@ def generate_report(ym, report_date, check_dict,
             row_data[idxp] = str(cur_remain_val)
             updated.append(row_data)
         if updated:
-            new_ws.update("A2", updated, value_input_option="USER_ENTERED")
+            new_ws.update(
+                range_name="A2",
+                values=updated,
+                value_input_option="USER_ENTERED"
+            )            
 
     return out_file_id
 
