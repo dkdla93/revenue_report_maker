@@ -1,0 +1,7 @@
+# Python
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Sensitive keys
+*.json
