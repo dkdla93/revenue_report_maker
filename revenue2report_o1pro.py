@@ -5,6 +5,7 @@ import re
 import time
 import io
 import zipfile
+import requests
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -100,12 +101,25 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
         sheets = meta["sheets"]
         return [(s["properties"]["sheetId"], s["properties"]["title"]) for s in sheets]
 
-    def download_sheet_as_xlsx(spreadsheet_id, sheet_id, session):
+    def download_sheet_as_xlsx(spreadsheet_id, sheet_id, session, max_retries=3):
         url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
         params = {"format": "xlsx", "gid": str(sheet_id)}
-        resp = session.get(url, params=params)
-        resp.raise_for_status()
-        return resp.content
+
+        for attempt in range(max_retries):
+            time.sleep(2)
+            try:
+                resp = session.get(url, params=params)
+                resp.raise_for_status()
+                return resp.content
+            except requests.exceptions.HTTPError as e:
+                # 429나 503처럼 “잠시 후 재시도”가 유효한 에러에 한해서 backoff
+                if e.response.status_code in [429, 503]:
+                    sleep_sec = 2 ** attempt  # 간단한 지수백오프
+                    time.sleep(sleep_sec)
+                    continue
+                raise e  # 그 외 에러는 재시도 없이 바로 raise
+
+        raise RuntimeError(f"Download failed after {max_retries} attempts (gid={sheet_id})")
 
     tabs = get_sheet_list(spreadsheet_id)
     zip_buffer = io.BytesIO()
@@ -113,7 +127,7 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
         for (gid, title) in tabs:
             content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
             zf.writestr(f"{title}.xlsx", content)
-            time.sleep(3)
+            time.sleep(2)
 
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
