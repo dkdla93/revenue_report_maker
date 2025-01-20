@@ -336,7 +336,7 @@ def generate_report(
     out_file_id = create_new_spreadsheet(out_filename, folder_id, drive_svc)
     out_sh = gc.open_by_key(out_file_id)
     try:
-        out_sh.del_worksheet(out_sh.sheet1)
+        out_sh.del_worksheet(out_sh.Sheet1)
     except:
         pass
 
@@ -354,7 +354,9 @@ def generate_report(
         st.info(f"[{i+1}/{num_art}] 현재 처리중: '{artist}'")
         time.sleep(0.2)
 
+        # ----------------------------
         # 세부매출내역 탭
+        # ----------------------------
         ws_detail_name = f"{artist}(세부매출내역)"
         ws_detail = create_worksheet_if_not_exists(out_sh, ws_detail_name, rows=200, cols=7)
         ws_detail.clear()
@@ -404,7 +406,7 @@ def generate_report(
                     "endIndex": 1  # A열 한 칸
                 },
                 "properties": {
-                    "pixelSize": 120
+                    "pixelSize": 140
                 },
                 "fields": "pixelSize"
             }
@@ -533,6 +535,29 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
             }
         })
+        # 매출 순수익 칼럼 값 오른쪽 정렬 
+        requests.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws_detail.id,
+                    "startRowIndex": 1,
+                    "endRowIndex": sum_row_0based,
+                    "startColumnIndex": 6,
+                    "endColumnIndex": 7
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "horizontalAlignment": "RIGHT",
+                        "textFormat": {"bold": False}
+                    }
+                },
+                "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
+            }
+        })
+
+        # 매출 칼럼 오른쪽 정렬
+        fmt_right = CellFormat(horizontalAlignment="RIGHT")
+        format_cell_range(ws_detail, f"G2:G{row_cursor_detail_end}", fmt_right)
 
         # 5) 전체 테두리
         # => A1~G{row_cursor_detail_end}
@@ -582,12 +607,12 @@ def generate_report(
         report_matrix[5][1] = f"{artist}님 음원 정산 내역서"
 
         report_matrix[7][0] = "•"
-        report_matrix[7][1] = "저희와 함께해 주셔서 정말 감사하고..."
+        report_matrix[7][1] = "저희와 함께해 주셔서 정말 감사하고 앞으로도 잘 부탁드리겠습니다!"
         report_matrix[8][0] = "•"
-        report_matrix[8][1] = f"{year_val}년 {month_val}월 음원 수익을..."
+        report_matrix[8][1] = f"{year_val}년 {month_val}월 음원의 수익을 아래와 같이 정산드립니다."
         report_matrix[9][0] = "•"
-        report_matrix[9][1] = "정산 문의사항이 있다면..."
-        report_matrix[9][5] = "E-Mail : some_email@domain.com"
+        report_matrix[9][1] = "정산 관련하여 문의사항이 있다면 무엇이든, 언제든 편히 메일 주세요!"
+        report_matrix[9][5] = "E-Mail : lucasdh3013@naver.com"
 
         # 1. 음원 서비스별
         report_matrix[12][0] = "1."
@@ -1034,6 +1059,18 @@ def generate_report(
             }
         })
         # 10행 (E-Mail 칸)
+        requests.append({
+            "mergeCells": {
+                "range": {
+                    "sheetId": ws_report_id,
+                    "startRowIndex": 9,  
+                    "endRowIndex": 10,
+                    "startColumnIndex": 5,
+                    "endColumnIndex": 7 
+                },
+                "mergeType": "MERGE_ALL"
+            }
+        })
         requests.append({
             "repeatCell": {
                 "range": {
