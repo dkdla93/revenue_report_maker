@@ -392,6 +392,8 @@ def generate_report(
             values=detail_matrix
         )
         ws_detail.resize(rows=row_cursor_detail_end, cols=7)
+        
+        time.sleep(1)
 
         # build requests:
         requests = []
@@ -588,7 +590,8 @@ def generate_report(
                 spreadsheetId=out_file_id,
                 body={"requests": requests}
             ).execute()
-
+        
+        time.sleep(2)
 
 
         # ---------------------------
@@ -731,6 +734,8 @@ def generate_report(
             range_name="A1",
             values=report_matrix)
         ws_report.resize(rows=row_cursor_report_end, cols=8)
+
+        time.sleep(1)   
 
         # (3) 한 번의 batchUpdate: 열너비, 행높이, 병합, 서식, 테두리 ...
         requests = []
@@ -1797,6 +1802,7 @@ def generate_report(
                 body={"requests": requests}
             ).execute()
 
+        time.sleep(2)
 
     # 다음 달 탭 복제
     next_ym = get_next_month_str(ym)
@@ -1828,7 +1834,7 @@ def generate_report(
                 values=updated,
                 value_input_option="USER_ENTERED"
             )
-
+        time.sleep(1)   
     return out_file_id
 
 # ========== [5] Streamlit UI =============
