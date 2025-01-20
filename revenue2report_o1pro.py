@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 import datetime
 import re
 import time
@@ -30,14 +31,18 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets",
 ]
-SERVICE_ACCOUNT_FILE = st.secrets["google_service_account"]  # 본인 환경에 맞게 수정
 
-
-credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-gc = gspread.authorize(credentials)
-
-drive_service = build("drive", "v3", credentials=credentials)
-sheet_service = build("sheets", "v4", credentials=credentials)
+def get_credentials_from_secrets():
+    """
+    Streamlit secrets에 저장된 google_service_account 정보를 이용해
+    Credentials 객체를 생성하는 헬퍼 함수.
+    """
+    service_account_info = st.secrets["google_service_account"]
+    creds = Credentials.from_service_account_info(
+        service_account_info,
+        scopes=SCOPES
+    )
+    return creds
 
 
 # ----------------------------------------------------------------
@@ -86,9 +91,9 @@ def almost_equal(a, b, tol=1e-3):
 # (추가) 시트별 XLSX 다운로드 → Zip
 # -----------------------------------------------------------------------------
 
-def get_sheet_list(spreadsheet_id, creds):
-    """스프레드시트의 모든 탭(sheetId, title) 목록을 가져온다."""
-    meta = sheet_service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+def get_sheet_list(spreadsheet_id, sheet_svc):
+    """스프레드시트의 모든 탭(sheetId, title) 목록을 가져와서 반환."""
+    meta = sheet_svc.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
     sheets = meta["sheets"]
     tab_list = []
     for s in sheets:
@@ -99,7 +104,7 @@ def get_sheet_list(spreadsheet_id, creds):
 
 def download_sheet_as_xlsx(spreadsheet_id: str, sheet_id: int, session: AuthorizedSession) -> bytes:
     """
-    특정 탭(gid=sheet_id)을 XLSX로 다운로드해서 bytes로 반환.
+    특정 탭(gid=sheet_id)을 XLSX로 다운로드하여 bytes로 반환.
     """
     url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
     params = {
@@ -108,14 +113,14 @@ def download_sheet_as_xlsx(spreadsheet_id: str, sheet_id: int, session: Authoriz
     }
     resp = session.get(url, params=params)
     resp.raise_for_status()
-    return resp.content  # XLSX in bytes
+    return resp.content  # XLSX (bytes)
 
-def download_all_tabs_as_zip(spreadsheet_id: str, creds) -> bytes:
+def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
     """
-    스프레드시트 ID내 모든 탭을 각각 XLSX로 다운로드한 뒤, zip 형태(bytes)로 묶어서 반환
+    스프레드시트 내 모든 탭을 각각 XLSX로 다운로드한 뒤, 하나의 zip으로 묶어 bytes로 반환.
     """
     # (1) 모든 탭 목록
-    tabs = get_sheet_list(spreadsheet_id, creds)
+    tabs = get_sheet_list(spreadsheet_id, sheet_svc)
     # AuthorizedSession
     session = AuthorizedSession(creds)
 
@@ -124,17 +129,18 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds) -> bytes:
     with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for (gid, title) in tabs:
             content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
-            # 파일명: "{탭제목}.xlsx"
             xlsx_filename = f"{title}.xlsx"
             zf.writestr(xlsx_filename, content)
 
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
 
+
 # ========== [2] 포매팅 함수 (batchUpdate) ===========
 def apply_section_styles(
     sheet_id: int, 
-    spreadsheet_id: str, 
+    spreadsheet_id: str,
+    sheet_svc,  # <= 추가: sheet_service 객체
     row_cursor_album: int, 
     row_cursor_deduction: int, 
     row_cursor_rate: int, 
@@ -147,16 +153,13 @@ def apply_section_styles(
     # =================================
     # [1] 기존 banding(줄무늬) 모두 삭제
     # =================================
-    sheet_data = sheet_service.spreadsheets().get(
+    sheet_data = sheet_svc.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
         ranges=[],
         includeGridData=False
     ).execute()
 
     delete_requests = []
-
-    # "sheet_data['sheets']"에 시트별 정보가 들어있음
-    # sheet_id와 일치하는 시트에서, bandedRanges가 있으면 전부 제거
     for sht in sheet_data["sheets"]:
         if sht["properties"]["sheetId"] == sheet_id:
             if "bandedRanges" in sht:
@@ -166,15 +169,15 @@ def apply_section_styles(
                             "bandedRangeId": br["bandedRangeId"]
                         }
                     })
-
-    # 삭제 요청이 있다면, batchUpdate
     if delete_requests:
-        sheet_service.spreadsheets().batchUpdate(
+        sheet_svc.spreadsheets().batchUpdate(
             spreadsheetId=spreadsheet_id,
             body={"requests": delete_requests}
         ).execute()
 
-
+    # ------------------------------------------
+    # [2] 실제 스타일 설정 요청
+    # ------------------------------------------
     """
     보고서(정산서) 탭 내 성공적으로 스타일(폰트, 배경색 등) 적용 완료.
     """
@@ -896,15 +899,15 @@ def apply_section_styles(
         }
     })
 
-    # batchUpdate 수행
+    # batchUpdate
     if requests:
-        sheet_service.spreadsheets().batchUpdate(
+        sheet_svc.spreadsheets().batchUpdate(
             spreadsheetId=spreadsheet_id,
             body={"requests": requests}
         ).execute()
 
 
-def apply_black_borders_to_worksheet(spreadsheet_id, sheet_id, max_rows, max_cols):
+def apply_black_borders_to_worksheet(spreadsheet_id, sheet_id, max_rows, max_cols, sheet_svc):
     """
     sheet_id에 대해 A1~(max_rows x max_cols) 범위를
     전부 검은색 실선 테두리로 지정.
@@ -928,7 +931,7 @@ def apply_black_borders_to_worksheet(spreadsheet_id, sheet_id, max_rows, max_col
         }
     }]
 
-    sheet_service.spreadsheets().batchUpdate(
+    sheet_svc.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body={"requests": requests}
     ).execute()
@@ -944,14 +947,14 @@ def get_next_month_str(ym: str) -> str:
         month = 1
     return f"{year}{month:02d}"
 
-def create_new_spreadsheet(filename: str, folder_id: str, attempt=1, max_attempts=5) -> str:
+def create_new_spreadsheet(filename: str, folder_id: str, drive_svc, attempt=1, max_attempts=5) -> str:
     # (기존 코드 동일)
     try:
         query = (
             f"parents in '{folder_id}' and trashed=false "
             f"and name='{filename}'"
         )
-        response = drive_service.files().list(
+        response = drive_svc.files().list(
             q=query,
             fields="files(id, name)",
             pageSize=50
@@ -959,7 +962,7 @@ def create_new_spreadsheet(filename: str, folder_id: str, attempt=1, max_attempt
         files = response.get("files", [])
         if files:
             existing_file_id = files[0]["id"]
-            print(f"파일 '{filename}' 이미 있음 -> 재사용 (ID={existing_file_id})")
+            print(f"파일 '{filename}' 이미 존재 -> 재사용 (ID={existing_file_id})")
             return existing_file_id
 
         file_metadata = {
@@ -967,30 +970,36 @@ def create_new_spreadsheet(filename: str, folder_id: str, attempt=1, max_attempt
             "mimeType": "application/vnd.google-apps.spreadsheet",
             "parents": [folder_id],
         }
-        file = drive_service.files().create(body=file_metadata).execute()
+        file = drive_svc.files().create(body=file_metadata).execute()
         return file["id"]
 
     except HttpError as e:
+        # userRateLimitExceeded 등의 경우 재시도 예시
         if (e.resp.status == 403 and
             "userRateLimitExceeded" in str(e) and
             attempt < max_attempts):
             sleep_sec = 2 ** attempt
-            print(f"[WARN] userRateLimitExceeded -> {sleep_sec}초 후 재시도 (재시도 {attempt}/{max_attempts})")
+            print(f"[WARN] userRateLimitExceeded -> {sleep_sec}초 후 재시도 ({attempt}/{max_attempts})")
             time.sleep(sleep_sec)
-            return create_new_spreadsheet(filename, folder_id, attempt=attempt+1, max_attempts=max_attempts)
+            return create_new_spreadsheet(filename, folder_id, drive_svc, attempt=attempt+1, max_attempts=max_attempts)
         else:
             raise e
 
-def create_worksheet_if_not_exists(gs: gspread.Spreadsheet, sheet_name: str, rows=200, cols=8):
-    # (기존 코드 동일)
-    all_ws = gs.worksheets()
+def create_worksheet_if_not_exists(gs_obj: gspread.Spreadsheet, sheet_name: str, rows=200, cols=8):
+    """
+    시트가 이미 존재하면 재사용, 없으면 새로 생성.
+    """
+    all_ws = gs_obj.worksheets()
     for w in all_ws:
         if w.title == sheet_name:
             return w
-    return gs.add_worksheet(title=sheet_name, rows=rows, cols=cols)
+    return gs_obj.add_worksheet(title=sheet_name, rows=rows, cols=cols)
 
-def duplicate_worksheet_with_new_name(gs: gspread.Spreadsheet, from_sheet_name: str, to_sheet_name: str):
-    # (기존 코드 동일)
+def duplicate_worksheet_with_new_name(gs, from_sheet_name: str, to_sheet_name: str):
+    """
+    'from_sheet_name' 시트를 복제해 'to_sheet_name'으로 생성.
+    중복 시 (2), (3)... 붙이는 예시.
+    """
     all_ws = gs.worksheets()
     all_titles = [w.title for w in all_ws]
     from_ws = None
@@ -1026,21 +1035,19 @@ def to_currency(num):
     return f"₩{format(int(round(num)), ',')}"
 
 # ========== [4] 핵심 로직: generate_report =============
-def generate_report(ym: str, report_date: str, check_dict: dict) -> str:
+def generate_report(ym, report_date, check_dict,
+                    gc, drive_svc, sheet_svc):
     """
-    메인 로직:
-      1) input_song cost / input_online revenue에서 ym 탭 데이터 읽기
-      2) 아티스트별 (세부매출내역), (정산서) 탭 생성 & 작성
-      3) 다음달 탭 복제
-      4) check_dict를 통해 각 단계에서 검증 결과 누적
-    => 최종 생성된 spreadsheetId를 리턴 (다운로드 위해)
+    1) 'input_song cost' / 'input_online revenue'에서 ym 탭 읽기
+    2) 아티스트별 세부매출/정산서 탭 생성
+    3) 다음달 탭 복제
     """
-    # check_dict: {
-    #   'song_artists': [], 'revenue_artists': [],
-    #   'artist_mismatch': None,
-    #   ... etc ...
-    # }
+    # folder_id도 여기서 st.secrets에서 직접 불러오거나, main()에서 인자로 받을 수도 있음
+    folder_id = st.secrets["google_service_account"]["folder_id"]
 
+    # ---------------------------
+    # (A) input_song cost 읽기
+    # ---------------------------
     try:
         song_cost_sh = gc.open("input_song cost")
     except gspread.exceptions.SpreadsheetNotFound:
@@ -1092,7 +1099,9 @@ def generate_report(ym: str, report_date: str, check_dict: dict) -> str:
             "당월잔액": remain_val,
         }
 
-    # input_online revenue
+    # ---------------------------
+    # (B) input_online revenue 읽기
+    # ---------------------------
     try:
         online_revenue_sh = gc.open("input_online revenue")
     except gspread.exceptions.SpreadsheetNotFound:
@@ -1160,9 +1169,11 @@ def generate_report(ym: str, report_date: str, check_dict: dict) -> str:
     # '합계' 등 제거
     all_artists = [a for a in all_artists if a and a != "합계"]
 
-    # output_report
+    # ---------------------------
+    # (D) output_report_xxxx 생성
+    # ---------------------------
     output_filename = f"ouput_report_{ym}"
-    out_file_id = create_new_spreadsheet(output_filename, FOLDER_ID)
+    out_file_id = create_new_spreadsheet(output_filename, folder_id, drive_svc)
     out_sh = gc.open_by_key(out_file_id)
 
     # sheet1 삭제
@@ -1171,10 +1182,13 @@ def generate_report(ym: str, report_date: str, check_dict: dict) -> str:
     except:
         pass
 
+    # ---------------------------
+    # (E) 아티스트별 탭 생성
+    # ---------------------------
     year_val = ym[:4]
     month_val = ym[4:]
 
-    # [추가] 진행률 바 생성 (Streamlit)
+    # 진행률 바 생성 (Streamlit)
     progress_bar = st.progress(0)
     num_artists = len(all_artists)
 
@@ -1482,6 +1496,7 @@ def generate_report(ym: str, report_date: str, check_dict: dict) -> str:
         apply_section_styles(
             sheet_id=ws_report_id,
             spreadsheet_id=out_file_id,
+            sheet_svc=sheet_svc,
             row_cursor_album=row_cursor_album,
             row_cursor_deduction=row_cursor_deduction,
             row_cursor_rate=row_cursor_rate,
@@ -1528,6 +1543,14 @@ def generate_report(ym: str, report_date: str, check_dict: dict) -> str:
 def main():
     st.title("아티스트 음원 정산 보고서 자동 생성기")
 
+    # secrets → credentials
+    credentials = get_credentials_from_secrets()
+
+    # build local apis
+    gc_local = gspread.authorize(credentials)
+    drive_service_local = build("drive", "v3", credentials=credentials)
+    sheet_service_local = build("sheets", "v4", credentials=credentials)
+
     # 1) check_dict 준비
     check_dict = {
         "song_artists": [],
@@ -1548,22 +1571,26 @@ def main():
             report_date = str(datetime.date.today())
 
         # 1) 보고서 생성
-        out_file_id = generate_report(ym, report_date, check_dict)  # <--- 수정: check_dict 추가
-        
+        out_file_id = generate_report(
+            ym, report_date, check_dict,
+            gc=gc_local,
+            drive_svc=drive_service_local,
+            sheet_svc=sheet_service_local
+        )
+
         # 2) 보고서 생성 끝났으면 => check_dict 활용해 UI 표시
 
         if out_file_id:
-            st.success(f"'{ym}' 진행기간 보고서 생성 완료! => {out_file_id}")
-            st.info(f"생성된 파일 링크: https://docs.google.com/spreadsheets/d/{out_file_id}/edit")
+            st.success(f"'{ym}' 보고서 생성 완료! => {out_file_id}")
+            st.info(f"생성된 구글시트 링크: https://docs.google.com/spreadsheets/d/{out_file_id}/edit")
 
             # 2) XLSX(zip) 다운로드 버튼
-            #   report_sheets.zip 이름으로 다운로드
             #   download_all_tabs_as_zip(...) 호출
-            zip_data = download_all_tabs_as_zip(out_file_id, credentials)
+            zip_data = download_all_tabs_as_zip(out_file_id, credentials, sheet_service_local)
             st.download_button(
-                label="XLSX(zip) 다운로드",
+                label="엑셀파일(zip) 다운로드",
                 data=zip_data,
-                file_name=f"{ym}_report_sheets.zip",
+                file_name=f"{ym}_report_revenue.zip",
                 mime="application/zip"
             )
             
