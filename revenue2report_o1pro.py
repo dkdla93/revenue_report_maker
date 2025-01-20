@@ -335,8 +335,10 @@ def generate_report(
     out_filename = f"ouput_report_{ym}"
     out_file_id = create_new_spreadsheet(out_filename, folder_id, drive_svc)
     out_sh = gc.open_by_key(out_file_id)
+    
     try:
-        out_sh.del_worksheet(out_sh.Sheet1)
+        default_ws = out_sh.worksheet("Sheet1")
+        out_sh.del_worksheet(default_ws)
     except:
         pass
 
