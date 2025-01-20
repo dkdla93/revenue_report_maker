@@ -113,7 +113,7 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
         for (gid, title) in tabs:
             content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
             zf.writestr(f"{title}.xlsx", content)
-            time.sleep(1)
+            time.sleep(2)
 
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
