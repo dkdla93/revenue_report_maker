@@ -169,63 +169,159 @@ def section_three_download_zip():
         st.subheader("3) 정산 보고서 압축파일 다운로드")
         
         time.sleep(3)
+        
+        out_file_id = st.session_state.get("report_file_id", "")
+        if not out_file_id:
+            st.warning("report_file_id가 없습니다.")
+            return
 
-        if st.session_state.get("zip_ready"):
-            # 이미 zip_data가 준비됨
-            st.success("압축파일 생성이 완료되었습니다.")
-            zip_data = st.session_state["zip_data"]
-            st.download_button(
-                label="압축파일 다운로드",
-                data=zip_data,
-                file_name="report.zip",
-                mime="application/zip"
-            )
-        else:
-            # zip 아직 없음 -> "압축파일 작업 시작" 버튼
-            if st.button("압축파일 생성 시작"):
-                # B 계정 인증
-                creds_b = get_credentials_from_secrets("B")
-                sheet_svc_b = build("sheets", "v4", credentials=creds_b)
 
-                out_file_id = st.session_state["report_file_id"]
-                if not out_file_id:
-                    st.error("report_file_id가 없습니다.")
-                    return
 
-                # 실제 진행률 표시할 프로그레스 바
-                progress_placeholder = st.empty()
-                progress_bar = progress_placeholder.progress(0)
 
-                info_placeholder = st.empty()
-                info_placeholder.info("다운로드 중...")
+        # 첫 번째 버튼: 정산서만 다운로드
+        if st.button("정산서 탭만 ZIP 다운로드"):
+            creds_b = get_credentials_from_secrets("B")
+            sheet_svc_b = build("sheets", "v4", credentials=creds_b)
 
-                try:
-                    # 실제 XLSX(zip) 생성
-                    zip_data = download_all_tabs_as_zip(
-                        spreadsheet_id=out_file_id,
-                        creds=creds_b,
-                        sheet_svc=sheet_svc_b,
-                        progress_bar=progress_bar  # 여기서 인자를 넘긴다
-                    )
-                    st.session_state["zip_data"] = zip_data
-                    st.session_state["zip_ready"] = True
+            progress_placeholder = st.empty()
+            progress_bar = progress_placeholder.progress(0.0)
+            info_placeholder = st.empty()
 
-                    # 진행률 100%
-                    progress_placeholder.progress(1.0)
-                    info_placeholder.success("모든 시트 다운로드 / 압축 완료!")
-                    time.sleep(1)
-                    info_placeholder.empty()
+            info_placeholder.info("정산서 탭 다운로드 중...")
 
-                    st.download_button(
-                        label="압축파일 다운로드",
-                        data=zip_data,
-                        file_name="report.zip",
-                        mime="application/zip"
-                    )
-                except Exception as e:
-                    st.error(f"압축파일 다운로드 작업 중 오류: {e}")
+            try:
+                zip_data_report = download_selected_tabs_as_zip(
+                    spreadsheet_id=out_file_id,
+                    creds=creds_b,
+                    sheet_svc=sheet_svc_b,
+                    tab_keyword="(정산서)",
+                    progress_bar=progress_bar
+                )
+                progress_placeholder.progress(1.0)
+                info_placeholder.success("정산서 탭 다운로드 / 압축 완료!")
+                time.sleep(1)
+                info_placeholder.empty()
+
+                st.download_button(
+                    label="정산서.zip 다운로드",
+                    data=zip_data_report,
+                    file_name="정산서.zip",
+                    mime="application/zip"
+                )
+
+            except Exception as e:
+                st.error(f"정산서 ZIP 다운로드 작업 중 오류: {e}")
+
+        # 두 번째 버튼: 세부매출내역만 다운로드
+        if st.button("세부매출내역 탭만 ZIP 다운로드"):
+            creds_b = get_credentials_from_secrets("B")
+            sheet_svc_b = build("sheets", "v4", credentials=creds_b)
+
+            progress_placeholder = st.empty()
+            progress_bar = progress_placeholder.progress(0.0)
+            info_placeholder = st.empty()
+
+            info_placeholder.info("세부매출내역 탭 다운로드 중...")
+
+            try:
+                zip_data_detail = download_selected_tabs_as_zip(
+                    spreadsheet_id=out_file_id,
+                    creds=creds_b,
+                    sheet_svc=sheet_svc_b,
+                    tab_keyword="(세부매출내역)",
+                    progress_bar=progress_bar
+                )
+                progress_placeholder.progress(1.0)
+                info_placeholder.success("세부매출내역 탭 다운로드 / 압축 완료!")
+                time.sleep(1)
+                info_placeholder.empty()
+
+                st.download_button(
+                    label="세부매출내역.zip 다운로드",
+                    data=zip_data_detail,
+                    file_name="세부매출내역.zip",
+                    mime="application/zip"
+                )
+
+            except Exception as e:
+                st.error(f"세부매출내역 ZIP 다운로드 작업 중 오류: {e}")
+
     else:
         st.info("정산 보고서 생성이 완료된 후, 압축파일 다운로드를 진행할 수 있습니다.")
+
+
+# ----------------------------------------------------------------------------
+# (새로운 함수) 특정 키워드를 포함한 탭만 골라서 다운로드
+# ----------------------------------------------------------------------------
+def download_selected_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, tab_keyword: str, progress_bar=None) -> bytes:
+    """
+    tab_keyword에 해당하는 탭(ex. '(정산서)' or '(세부매출내역)')만 다운로드/압축
+    """
+    from google.auth.transport.requests import AuthorizedSession
+    session = AuthorizedSession(creds)
+
+    def get_sheet_list(spreadsheet_id):
+        meta = sheet_svc.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        all_sheets = meta["sheets"]
+
+        sheet_list = []
+        for s in all_sheets:
+            props = s["properties"]
+            sid = props["sheetId"]
+            title = props["title"]
+            stype = props.get("sheetType", "GRID")
+
+            # 만약 'GRID' 타입이 아니거나, sheetId=0 인 것은 스킵
+            if stype != "GRID" or sid == 0:
+                continue
+
+            # 탭 이름에 tab_keyword가 들어있는지 판별
+            if tab_keyword in title:
+                sheet_list.append((sid, title))
+
+        return sheet_list
+
+    def download_sheet_as_xlsx(spreadsheet_id, sheet_id, session, max_retries=3):
+        url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
+        params = {"format": "xlsx", "gid": str(sheet_id)}
+
+        for attempt in range(max_retries):
+            time.sleep(1)  # 시도마다 잠깐 쉼
+            try:
+                resp = session.get(url, params=params)
+                resp.raise_for_status()
+                return resp.content
+            except req.exceptions.HTTPError as e:
+                if e.response.status_code in [429, 500, 503]:
+                    time.sleep(2**attempt)
+                    continue
+                elif e.response.status_code in [403, 404]:
+                    time.sleep(1)
+                    continue
+                else:
+                    raise e
+        raise RuntimeError(f"Download failed after {max_retries} attempts (gid={sheet_id})")
+
+    # 1) 해당 keyword가 들어간 탭 목록만 필터링
+    tabs = get_sheet_list(spreadsheet_id)
+    total = len(tabs)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for i, (gid, title) in enumerate(tabs):
+            content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
+            zf.writestr(f"{title}.xlsx", content)
+
+            # (B) 탭 하나 완료 후 약간 쉼
+            time.sleep(1)
+
+            # (C) 진행률 갱신 (if progress_bar is not None)
+            if progress_bar is not None and total > 0:
+                ratio = (i + 1) / total
+                progress_bar.progress(ratio)
+
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue()
 
 
 # ----------------------------------------------------------------
