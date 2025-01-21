@@ -289,7 +289,7 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, progress_bar
             title = props["title"]
 
             # 만약 'GRID' 타입이 아니거나, sheetId=0 인 것은 스킵
-            if stype != "GRID" or sid == 0 or sid == "Sheet1":
+            if stype != "GRID" or sid == 0:
                 print(f"Skipping non-GRID or GID=0 sheet => id={sid}, title={title}, type={stype}")
                 continue
 
@@ -309,11 +309,12 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, progress_bar
                 return resp.content
             except req.exceptions.HTTPError as e:
                 if e.response.status_code in [429, 500, 503]:
-                    sleep_sec = 1 ** attempt
+                    sleep_sec = 2 * attempt
                     time.sleep(sleep_sec)
                     continue
                 elif e.response.status_code in [403, 404]:
                     # 403, 404도 1~2초 뒤 재시도 해볼 만함
+                    time.sleep(1)
                     continue
                 else:
                     # 그 외 상태 코드는 그냥 에러
