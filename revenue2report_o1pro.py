@@ -276,8 +276,23 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
 
     def get_sheet_list(spreadsheet_id):
         meta = sheet_svc.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
-        sheets = meta["sheets"]
-        return [(s["properties"]["sheetId"], s["properties"]["title"]) for s in sheets]
+        all_sheets = meta["sheets"]
+
+        sheet_list = []
+        for s in all_sheets:
+            props = s["properties"]
+            sid = props["sheetId"]
+            stype = props.get("sheetType", "GRID") 
+            title = props["title"]
+
+            # 만약 'GRID' 타입이 아니거나, sheetId=0 인 것은 스킵
+            if stype != "GRID" or sid == 0 or sid == "Sheet1":
+                print(f"Skipping non-GRID or GID=0 sheet => id={sid}, title={title}, type={stype}")
+                continue
+
+            sheet_list.append((sid, title))
+
+        return sheet_list
 
     def download_sheet_as_xlsx(spreadsheet_id, sheet_id, session, max_retries=3):
         url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
