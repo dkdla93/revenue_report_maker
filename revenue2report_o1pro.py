@@ -356,15 +356,44 @@ def create_new_spreadsheet(filename: str, folder_id: str, drive_svc, attempt=1, 
         else:
             raise e
 
-def create_worksheet_if_not_exists(gs_obj: gspread.Spreadsheet, sheet_name: str, rows=200, cols=8):
-    """
-    시트가 이미 존재하면 재사용, 없으면 새로 생성.
-    """
-    all_ws = gs_obj.worksheets()
-    for w in all_ws:
-        if w.title == sheet_name:
-            return w
-    return gs_obj.add_worksheet(title=sheet_name, rows=rows, cols=cols)
+def batch_add_sheets(spreadsheet_id, sheet_svc, list_of_sheet_titles):
+    meta = sheet_svc.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+    existing_sheets = meta["sheets"]
+    existing_titles = [s["properties"]["title"] for s in existing_sheets]
+
+    # 누락된 시트
+    missing = [t for t in list_of_sheet_titles if t not in existing_titles]
+    if not missing:
+        print("모든 시트가 이미 존재합니다.")
+        return
+
+    requests_add = []
+    for title in missing:
+        requests_add.append({
+            "addSheet": {
+                "properties": {
+                    "title": title,
+                    "gridProperties": {
+                        "rowCount": 200,
+                        "columnCount": 8
+                    }
+                }
+            }
+        })
+
+    body = {"requests": requests_add}
+    resp = sheet_svc.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body=body
+    ).execute()
+    
+    # resp["replies"] 안에 addSheet된 정보가 들어있음
+    print("시트 생성 완료, 개수 =", len(resp["replies"]))
+
+    # ***해당 코드 추가 확인 필요***
+    for idx, rep in enumerate(resp["replies"]):
+        sheet_props = rep["addSheet"]["properties"]
+        print(f" -> {idx} '{sheet_props['title']}' (sheetId={sheet_props['sheetId']})")
 
 
 def duplicate_worksheet_with_new_name(gs_obj, from_sheet_name: str, to_sheet_name: str):
@@ -546,6 +575,16 @@ def generate_report(
 
     # ────────────── (1) batchUpdate를 한 번만 쓰기 위해 requests 모을 리스트 ──────────────
     all_requests = []
+    
+    needed_titles = []
+    for artist in all_artists:
+        needed_titles.append(f"{artist}(세부매출내역)")
+        needed_titles.append(f"{artist}(정산서)")
+
+    # 3) batch_add_sheets
+    batch_add_sheets(out_file_id, sheet_svc, needed_titles)
+    # 이때, batch_add_sheets는 위에 예시로 만든 함수
+
 
     # --------------- (E) 아티스트별 시트 만들기 -----------
     for i, artist in enumerate(all_artists):
@@ -563,9 +602,12 @@ def generate_report(
         # ----------------------------
         # 세부매출내역 탭
         # ----------------------------
-        ws_detail_name = f"{artist}(세부매출내역)"
-        ws_detail = create_worksheet_if_not_exists(out_sh, ws_detail_name, rows=200, cols=7)
-        ws_detail.clear()
+        # ws_detail_name = f"{artist}(세부매출내역)"
+        # ws_detail = create_worksheet_if_not_exists(out_sh, ws_detail_name, rows=200, cols=7)
+        # ws_detail.clear()
+
+        ws_detail = out_sh.worksheet(f"{artist}(세부매출내역)")
+        ws_detail.clear()  # 여기까지만 하면 "비우기" 역할
 
         # detail data
         details = artist_revenue_dict[artist]
@@ -788,14 +830,14 @@ def generate_report(
 
         time.sleep(2)
 
-        # ---------------------------
+        # ------------------------------------------------------
         # 정산서 탭 (batchUpdate 방식)
-        # ---------------------------
+        # ------------------------------------------------------
 
-        ws_report_name = f"{artist}(정산서)"
-        ws_report = create_worksheet_if_not_exists(out_sh, ws_report_name, rows=200, cols=8)
+        ws_report = out_sh.worksheet(f"{artist}(정산서)")
+        ws_report.clear()  # 여기까지만 하면 "비우기" 역할
         ws_report_id = ws_report.id
-        ws_report.clear()
+        
 
         # 1) report_matrix 생성 (기존 방식 그대로)
         report_matrix = []
