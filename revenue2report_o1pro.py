@@ -172,7 +172,7 @@ def section_three_download_zip():
 
         if st.session_state.get("zip_ready"):
             # 이미 zip_data가 준비됨
-            st.success("압축파일이 이미 생성되었습니다.")
+            st.success("압축파일 생성이 완료되었습니다.")
             zip_data = st.session_state["zip_data"]
             st.download_button(
                 label="압축파일 다운로드",
