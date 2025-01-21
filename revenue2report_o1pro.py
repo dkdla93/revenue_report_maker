@@ -59,6 +59,10 @@ def section_one_report_input():
     """
     st.subheader("1) 정산 보고서 정보 입력 항목")
 
+    # (A) 진행률 바 / 현재 처리중 아티스트 표시용 placeholder
+    progress_bar = st.empty()
+    artist_placeholder = st.empty()
+
     # session_state에서 기본값 불러오기 (없으면 "")
     default_ym = st.session_state.get("ym", "")
     default_report_date = st.session_state.get("report_date", "")
@@ -87,11 +91,6 @@ def section_one_report_input():
         st.session_state["ym"] = ym
         st.session_state["report_date"] = report_date
 
-        # (A) 진행률 바 / 현재 처리중 아티스트 표시용 placeholder
-        progress_placeholder = st.empty()
-        artist_placeholder = st.empty()
-
-
         # 실제 generate_report() 호출
         check_dict = {
             "song_artists": [],
@@ -104,7 +103,9 @@ def section_one_report_input():
             ym, report_date, check_dict,
             gc=gc_a, 
             drive_svc=drive_svc_a, 
-            sheet_svc=sheet_svc_a
+            sheet_svc=sheet_svc_a,
+            progress_bar=progress_bar,
+            artist_placeholder=artist_placeholder
         )
         st.session_state["report_done"] = True
         st.session_state["report_file_id"] = out_file_id
@@ -114,7 +115,7 @@ def section_one_report_input():
             artist_placeholder.success("모든 아티스트 정산 보고서 생성 완료!")
             time.sleep(1.0)
             artist_placeholder.empty()
-            progress_placeholder.empty()
+            progress_bar.empty()
 
             st.session_state["report_done"] = True
             st.session_state["report_file_id"] = out_file_id
@@ -405,7 +406,9 @@ def generate_report(
     check_dict: dict,
     gc: gspread.Client,
     drive_svc,
-    sheet_svc
+    sheet_svc,
+    progress_bar,
+    artist_placeholder
 ):
     folder_id = st.secrets["google_service_account_a"]["folder_id"]
 
@@ -520,13 +523,6 @@ def generate_report(
     all_artists = [a for a in all_artists if a and a != "합계"]
     st.session_state["all_artists"] = all_artists
 
-    # 진행률 바 초기화
-    progress_bar = st.progress(0)
-    for i, artist in enumerate(all_artists):
-        ratio = (i+1) / len(all_artists)
-        progress_bar.progress(ratio)
-        st.info(f"[{i+1}/{len(all_artists)}] 현재 '{artist}' 처리 중...")
-
     # ------------------- (D) output_report_YYYYMM --------
     out_filename = f"ouput_report_{ym}"
     out_file_id = create_new_spreadsheet(out_filename, folder_id, drive_svc)
@@ -542,10 +538,24 @@ def generate_report(
     year_val = ym[:4]
     month_val = ym[4:]
 
+    # (1) placeholder 준비
+    artist_placeholder = st.empty()
+
+    # (2) 진행률 바 준비
+    progress_bar = st.progress(0)
 
     # --------------- (E) 아티스트별 시트 만들기 -----------
     for i, artist in enumerate(all_artists):
-        time.sleep(4)
+        ratio = (i + 1) / len(all_artists)
+
+        # 진행률 바 업데이트
+        progress_bar.progress(ratio)
+
+        # placeholder에 “현재 아티스트” 안내
+        artist_placeholder.info(f"[{i+1}/{len(all_artists)}] '{artist}' 처리 중...")
+
+        # (실제 처리 로직 / time.sleep 등)
+        time.sleep(1)
 
         # ----------------------------
         # 세부매출내역 탭
@@ -1993,6 +2003,9 @@ def generate_report(
             ).execute()
 
         time.sleep(2)
+
+    # 루프 끝나면 처리 완료 메시지 (원한다면)
+    artist_placeholder.success("모든 아티스트 처리 완료!")
 
     # 다음 달 탭 복제
     next_ym = get_next_month_str(ym)
