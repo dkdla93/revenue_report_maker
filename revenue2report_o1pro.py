@@ -167,7 +167,9 @@ def section_three_download_zip():
     """
     if "report_done" in st.session_state and st.session_state["report_done"]:
         st.subheader("3) 정산 보고서 압축파일 다운로드")
-
+        
+        time.sleep(5)
+        
         if st.session_state.get("zip_ready"):
             # 이미 zip_data가 준비됨
             st.success("압축파일이 이미 생성되었습니다.")
@@ -288,11 +290,17 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
                 resp.raise_for_status()
                 return resp.content
             except req.exceptions.HTTPError as e:
-                if e.response.status_code in [429, 503]:
+                if e.response.status_code in [429, 500, 503]:
                     sleep_sec = 2 ** attempt
                     time.sleep(sleep_sec)
                     continue
-                raise e
+                elif e.response.status_code in [403, 404]:
+                    # 403, 404도 1~2초 뒤 재시도 해볼 만함
+                    time.sleep(2)
+                    continue
+                else:
+                    # 그 외 상태 코드는 그냥 에러
+                    raise e
         raise RuntimeError(f"Download failed after {max_retries} attempts (gid={sheet_id})")
 
     tabs = get_sheet_list(spreadsheet_id)
