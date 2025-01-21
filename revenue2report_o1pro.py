@@ -301,7 +301,7 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
         for (gid, title) in tabs:
             content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
             zf.writestr(f"{title}.xlsx", content)
-            time.sleep(0.3)  # 탭 하나 끝날 때마다 잠시 쉼
+            time.sleep(2)  # 탭 하나 끝날 때마다 잠시 쉼
 
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
@@ -544,6 +544,9 @@ def generate_report(
     # (2) 진행률 바 준비
     progress_bar = st.progress(0)
 
+    # ────────────── (1) batchUpdate를 한 번만 쓰기 위해 requests 모을 리스트 ──────────────
+    all_requests = []
+
     # --------------- (E) 아티스트별 시트 만들기 -----------
     for i, artist in enumerate(all_artists):
         ratio = (i + 1) / len(all_artists)
@@ -596,13 +599,13 @@ def generate_report(
         time.sleep(1)
 
         # build requests:
-        requests = []
+        detail_requests = []
 
         # 1) 열 너비 (A: 120, B:140, ...)
         # updateDimensionProperties -> dimension='COLUMNS', range-> startIndex=0 ...
         # A=0, B=1, ...
         # 예시: A열(0)
-        requests.append({
+        detail_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_detail.id,
@@ -617,7 +620,7 @@ def generate_report(
             }
         })
         # B열
-        requests.append({
+        detail_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_detail.id,
@@ -632,7 +635,7 @@ def generate_report(
             }
         })
         # E열 -> startIndex=4, endIndex=5
-        requests.append({
+        detail_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_detail.id,
@@ -656,7 +659,7 @@ def generate_report(
         # 3) 헤더(A1:G1) 배경/폰트
         #  => "repeatCell": { "range": ..., "cell": { "userEnteredFormat": {...} } }
         #  여기서는 "헤더행" 하나만이므로 row=0..1, col=0..7
-        requests.append({
+        detail_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_detail.id,
@@ -686,7 +689,7 @@ def generate_report(
         # => ex) if 12행, then row=11
         sum_row_0based = row_cursor_detail_end-1  # 0-based
         # 병합
-        requests.append({
+        detail_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_detail.id,
@@ -699,7 +702,7 @@ def generate_report(
             }
         })
         # 배경색/가운데 정렬
-        requests.append({
+        detail_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_detail.id,
@@ -722,7 +725,7 @@ def generate_report(
             }
         })
         # 합계값 오른쪽 정렬 => G{sum_row_0based}
-        requests.append({
+        detail_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_detail.id,
@@ -741,7 +744,7 @@ def generate_report(
             }
         })
         # 매출 순수익 칼럼 값 오른쪽 정렬 
-        requests.append({
+        detail_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_detail.id,
@@ -760,14 +763,10 @@ def generate_report(
             }
         })
 
-        # 매출 칼럼 오른쪽 정렬
-        fmt_right = CellFormat(horizontalAlignment="RIGHT")
-        format_cell_range(ws_detail, f"G2:G{row_cursor_detail_end}", fmt_right)
-
         # 5) 전체 테두리
         # => A1~G{row_cursor_detail_end}
         # => row=0..row_cursor_detail_end, col=0..7
-        requests.append({
+        detail_requests.append({
             "updateBorders": {
                 "range": {
                     "sheetId": ws_detail.id,
@@ -784,15 +783,10 @@ def generate_report(
                 "innerVertical": {"style":"SOLID","width":1}
             }
         })
-
-        if requests:
-            sheet_svc.spreadsheets().batchUpdate(
-                spreadsheetId=out_file_id,
-                body={"requests": requests}
-            ).execute()
         
-        time.sleep(2)
+        all_requests.extend(detail_requests)
 
+        time.sleep(2)
 
         # ---------------------------
         # 정산서 탭 (batchUpdate 방식)
@@ -938,10 +932,10 @@ def generate_report(
         time.sleep(1)   
 
         # (3) 한 번의 batchUpdate: 열너비, 행높이, 병합, 서식, 테두리 ...
-        requests = []
+        report_requests = []
 
         # 3-1) 열너비 (A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -953,7 +947,7 @@ def generate_report(
                 "fields": "pixelSize"
             }
         })
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -965,7 +959,7 @@ def generate_report(
                 "fields": "pixelSize"
             }
         })
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -977,7 +971,7 @@ def generate_report(
                 "fields": "pixelSize"
             }
         })
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -989,7 +983,7 @@ def generate_report(
                 "fields": "pixelSize"
             }
         })
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1001,7 +995,7 @@ def generate_report(
                 "fields": "pixelSize"
             }
         })
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1013,7 +1007,7 @@ def generate_report(
                 "fields": "pixelSize"
             }
         })
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1025,7 +1019,7 @@ def generate_report(
                 "fields": "pixelSize"
             }
         })
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1039,7 +1033,7 @@ def generate_report(
         })
 
         # 3-2) 행높이 (옵션) => 예) 4행(3 in 0-based), 6행(5 in 0-based) 높이=30
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1051,7 +1045,7 @@ def generate_report(
                 "fields": "pixelSize"
             }
         })
-        requests.append({
+        report_requests.append({
             "updateDimensionProperties": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1066,7 +1060,7 @@ def generate_report(
 
 
         # 4-1) 상단 고정 항목(발행 날짜, H2: row=1, col=6)
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1091,7 +1085,7 @@ def generate_report(
         })        
 
         # 4-2) 상단 고정 항목(판매분, B4:E4)
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1103,7 +1097,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1128,7 +1122,7 @@ def generate_report(
         })
 
         # 4-3) 상단 고정 항목(아티스트 정산내역서, B6:G6)
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1140,7 +1134,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1167,7 +1161,7 @@ def generate_report(
 
         # 4-4) 상단 고정 항목(안내문, B8:E8~B10:E10)
         #8행
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1179,7 +1173,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1201,7 +1195,7 @@ def generate_report(
             }
         })
         #9행
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1213,7 +1207,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1235,7 +1229,7 @@ def generate_report(
             }
         })
         #10행
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1247,7 +1241,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1269,7 +1263,7 @@ def generate_report(
             }
         })
         # 10행 (E-Mail 칸)
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1281,7 +1275,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1307,7 +1301,7 @@ def generate_report(
         })
         
         # 4-5) 1열 정렬 (번호 영역)
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1332,7 +1326,7 @@ def generate_report(
         })
 
         # 4-6) 하단 고정 항목(부가세, G)
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1358,7 +1352,7 @@ def generate_report(
     
 
         # 5-1) "음원 서비스별 정산내역" 표 타이틀
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1380,7 +1374,7 @@ def generate_report(
             }
         })
         # 5-2) "음원 서비스별 정산내역" 표 헤더 (Row=13)
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1405,7 +1399,7 @@ def generate_report(
             }
         })
         # 5-3) 합계행 전 병합
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1418,7 +1412,7 @@ def generate_report(
             }
         })
         # 5-4) 합계행 병합
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1430,7 +1424,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1454,7 +1448,7 @@ def generate_report(
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1484,7 +1478,7 @@ def generate_report(
         banding_start_col = 1
         banding_end_col = 7
         if banding_end_row > banding_start_row:  # 유효범위 체크
-            requests.append({
+            report_requests.append({
                 "addBanding": {
                     "bandedRange": {
                         "range": {
@@ -1506,7 +1500,7 @@ def generate_report(
                     }
                 }
             })
-            requests.append({
+            report_requests.append({
                 "repeatCell": {
                     "range": {
                         "sheetId": ws_report_id,
@@ -1532,7 +1526,7 @@ def generate_report(
 
 
         # 6-1) 앨범별 정산내역 타이틀
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1555,7 +1549,7 @@ def generate_report(
         })
 
         # 6-2) 앨범별 정산내역 헤더
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1580,7 +1574,7 @@ def generate_report(
             }
         })
         # 6-3) 앨범별 정산내역 표 본문
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1604,7 +1598,7 @@ def generate_report(
             }
         })
         # 6-4) 앨범별 정산내역 합계행
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1628,7 +1622,7 @@ def generate_report(
             }
         })
         # 6-5) 합계행 병합
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1640,7 +1634,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1664,7 +1658,7 @@ def generate_report(
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1691,7 +1685,7 @@ def generate_report(
 
 
         # 7-1) 공제 내역 타이틀
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1714,7 +1708,7 @@ def generate_report(
         })
 
         # 7-2) 공제 내역 헤더
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1740,7 +1734,7 @@ def generate_report(
         })
         
         # 7-3) 공제 내역 표 본문 (데이터부분)
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1765,7 +1759,7 @@ def generate_report(
         })
         
         # 7-4) 공제 내역 표 본문 (합계 부분)
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1791,7 +1785,7 @@ def generate_report(
 
 
         # 8-1) 수익 배분 타이틀
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1814,7 +1808,7 @@ def generate_report(
         })
 
         # 8-2) 수익 배분 헤더
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1840,7 +1834,7 @@ def generate_report(
         })
         
         # 8-3) 수익 배분 표 본문 
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1865,7 +1859,7 @@ def generate_report(
         })
         
         # 8-4) 수익 배분 표 합계행 병합
-        requests.append({
+        report_requests.append({
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1877,7 +1871,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1901,7 +1895,7 @@ def generate_report(
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        requests.append({
+        report_requests.append({
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1928,7 +1922,7 @@ def generate_report(
 
 
         # 9-1) 전체 테두리 화이트
-        requests.append({
+        report_requests.append({
             "updateBorders": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1949,7 +1943,7 @@ def generate_report(
         # 9-2) 표 부분 점선 
         def add_dotted_borders(r1, r2, c1, c2):
             """바깥+안쪽 모두 DOTTED"""
-            requests.append({
+            report_requests.append({
                 "updateBorders": {
                     "range": {
                         "sheetId": ws_report_id,
@@ -1976,7 +1970,7 @@ def generate_report(
         add_dotted_borders(row_cursor_rate, row_cursor_sum4+1, 1, 7)
         
         # 9-3) 시트 외곽 검정 SOLID 
-        requests.append({
+        report_requests.append({
             "updateBorders": {
                 "range": {
                     "sheetId": ws_report_id,
@@ -1992,17 +1986,19 @@ def generate_report(
                 # innerHorizontal, innerVertical는 생략 => 기존 값 유지
             }
         })
-            
-        # -----------------
-        # batchUpdate 실행
-        # -----------------
-        if requests:
-            sheet_svc.spreadsheets().batchUpdate(
-                spreadsheetId=out_file_id,
-                body={"requests": requests}
-            ).execute()
+        
+        all_requests.extend(report_requests)
 
-        time.sleep(2)
+    # -----------------
+    # batchUpdate 실행
+    # -----------------
+    if all_requests:
+        sheet_svc.spreadsheets().batchUpdate(
+            spreadsheetId=out_file_id,
+            body={"requests": all_requests}
+        ).execute()
+
+    time.sleep(2)
 
     # 루프 끝나면 처리 완료 메시지 (원한다면)
     artist_placeholder.success("모든 아티스트 처리 완료!")
@@ -2037,7 +2033,7 @@ def generate_report(
                 values=updated,
                 value_input_option="USER_ENTERED"
             )
-        time.sleep(1)   
+        time.sleep(2)   
     return out_file_id
 
 # ========== [5] Streamlit UI =============
