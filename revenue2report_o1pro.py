@@ -309,7 +309,7 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, progress_bar
                 return resp.content
             except req.exceptions.HTTPError as e:
                 if e.response.status_code in [429, 500, 503]:
-                    sleep_sec = 0.5 ** attempt
+                    sleep_sec = 1 ** attempt
                     time.sleep(sleep_sec)
                     continue
                 elif e.response.status_code in [403, 404]:
