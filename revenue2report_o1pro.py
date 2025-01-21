@@ -169,7 +169,7 @@ def section_three_download_zip():
         st.subheader("3) 정산 보고서 압축파일 다운로드")
         
         time.sleep(5)
-        
+
         if st.session_state.get("zip_ready"):
             # 이미 zip_data가 준비됨
             st.success("압축파일이 이미 생성되었습니다.")
@@ -284,7 +284,7 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
         params = {"format": "xlsx", "gid": str(sheet_id)}
 
         for attempt in range(max_retries):
-            time.sleep(1)  # 시도마다 잠깐 쉼
+            time.sleep(2)  # 시도마다 잠깐 쉼
             try:
                 resp = session.get(url, params=params)
                 resp.raise_for_status()
@@ -587,6 +587,8 @@ def generate_report(
     for artist in all_artists:
         needed_titles.append(f"{artist}(세부매출내역)")
         needed_titles.append(f"{artist}(정산서)")
+        time.sleep(5)  # 아티스트별 5초씩 쉬기
+
 
     # 3) batch_add_sheets
     batch_add_sheets(out_file_id, sheet_svc, needed_titles)
@@ -613,7 +615,6 @@ def generate_report(
         # ws_detail.clear()
 
         ws_detail = out_sh.worksheet(f"{artist}(세부매출내역)")
-        ws_detail.clear()  # 여기까지만 하면 "비우기" 역할
 
         # detail data
         details = artist_revenue_dict[artist]
@@ -848,7 +849,6 @@ def generate_report(
         # ------------------------------------------------------
 
         ws_report = out_sh.worksheet(f"{artist}(정산서)")
-        ws_report.clear()  # 여기까지만 하면 "비우기" 역할
         ws_report_id = ws_report.id
         
 
