@@ -375,7 +375,13 @@ def batch_add_sheets(spreadsheet_id, sheet_svc, list_of_sheet_titles):
         print("모든 시트가 이미 존재합니다.")
         return
 
+    # 분할 크기 설정 (예: 30)
+    BATCH_SIZE = 30
+
+    # 하나의 batchUpdate "requests"를 모을 리스트
     requests_add = []
+    total_count = 0
+    
     for title in missing:
         requests_add.append({
             "addSheet": {
@@ -389,14 +395,31 @@ def batch_add_sheets(spreadsheet_id, sheet_svc, list_of_sheet_titles):
             }
         })
 
-    body = {"requests": requests_add}
-    resp = sheet_svc.spreadsheets().batchUpdate(
-        spreadsheetId=spreadsheet_id,
-        body=body
-    ).execute()
-    
-    # resp["replies"] 안에 addSheet된 정보가 들어있음
-    print("시트 생성 완료, 개수 =", len(resp["replies"]))
+        # 만약 BATCH_SIZE(30)에 도달하면 API 호출
+        if len(requests_add) >= BATCH_SIZE:
+            body = {"requests": requests_add}
+            resp = sheet_svc.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body=body
+            ).execute()
+
+            total_count += len(resp["replies"])
+            print(f"분할 addSheet 완료: {len(resp['replies'])}개 생성")
+            requests_add.clear()
+            time.sleep(2)  # 잠깐 쉬기 (Rate Limit 완화)
+
+    # 남아있는 요청이 있으면 마무리 전송
+    if requests_add:
+        body = {"requests": requests_add}
+        resp = sheet_svc.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body=body
+        ).execute()
+        total_count += len(resp["replies"])
+        print(f"마지막 addSheet 완료: {len(resp['replies'])}개 생성")
+        requests_add.clear()
+
+    print(f"시트 생성 총 개수: {total_count}")
 
     # ***해당 코드 추가 확인 필요***
     for idx, rep in enumerate(resp["replies"]):
@@ -587,13 +610,10 @@ def generate_report(
     for artist in all_artists:
         needed_titles.append(f"{artist}(세부매출내역)")
         needed_titles.append(f"{artist}(정산서)")
-        time.sleep(5)  # 아티스트별 5초씩 쉬기
-
 
     # 3) batch_add_sheets
     batch_add_sheets(out_file_id, sheet_svc, needed_titles)
     # 이때, batch_add_sheets는 위에 예시로 만든 함수
-
 
     # --------------- (E) 아티스트별 시트 만들기 -----------
     for i, artist in enumerate(all_artists):
@@ -643,12 +663,25 @@ def generate_report(
             range_name="A1",
             values=detail_matrix
         )
-        ws_detail.resize(rows=row_cursor_detail_end, cols=7)
-        
-        time.sleep(1)
+
+        time.sleep(3)        
 
         # build requests:
         detail_requests = []
+
+        # updateSheetProperties 로 resize
+        detail_requests.append({
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": ws_detail.id,
+                    "gridProperties": {
+                        "rowCount": row_cursor_detail_end,
+                        "columnCount": 7
+                    }
+                },
+                "fields": "gridProperties(rowCount,columnCount)"
+            }
+        })
 
         # 1) 열 너비 (A: 120, B:140, ...)
         # updateDimensionProperties -> dimension='COLUMNS', range-> startIndex=0 ...
@@ -832,17 +865,19 @@ def generate_report(
                 "innerVertical": {"style":"SOLID","width":1}
             }
         })
-        
+
         all_requests.extend(detail_requests)
 
         # (추가) 분할 batchUpdate 체크
-        if len(all_requests) >= 80:  # 예: 80개 정도마다 전송
+        if len(all_requests) >= 200:  # 예: 80개 정도마다 전송
             sheet_svc.spreadsheets().batchUpdate(
                 spreadsheetId=out_file_id,
                 body={"requests": all_requests}
             ).execute()
             all_requests.clear()     # 전송 후 비우기
-            time.sleep(2)           # 잠시 쉼 (네트워크 안정화)
+            time.sleep(3)           # 잠시 쉼 (네트워크 안정화)
+
+
 
         # ------------------------------------------------------
         # 정산서 탭 (batchUpdate 방식)
@@ -982,12 +1017,25 @@ def generate_report(
         ws_report.update(
             range_name="A1",
             values=report_matrix)
-        ws_report.resize(rows=row_cursor_report_end, cols=8)
 
-        time.sleep(1)   
+        time.sleep(3)   
 
         # (3) 한 번의 batchUpdate: 열너비, 행높이, 병합, 서식, 테두리 ...
         report_requests = []
+
+        # updateSheetProperties 로 resize
+        report_requests.append({
+            "updateSheetProperties": {
+                "properties": {
+                    "sheetId": ws_report.id,
+                    "gridProperties": {
+                        "rowCount": row_cursor_report_end,
+                        "columnCount": 8
+                    }
+                },
+                "fields": "gridProperties(rowCount,columnCount)"
+            }
+        })
 
         # 3-1) 열너비 (A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
         report_requests.append({
@@ -2045,13 +2093,13 @@ def generate_report(
         all_requests.extend(report_requests)
 
         # (추가) 분할 batchUpdate 체크
-        if len(all_requests) >= 80:
+        if len(all_requests) >200:
             sheet_svc.spreadsheets().batchUpdate(
                 spreadsheetId=out_file_id,
                 body={"requests": all_requests}
             ).execute()
             all_requests.clear()
-            time.sleep(2)
+            time.sleep(3)
 
 
     # -----------------
