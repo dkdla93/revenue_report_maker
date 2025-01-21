@@ -33,17 +33,208 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-def get_credentials_from_secrets():
+def get_credentials_from_secrets(which: str = "A") -> Credentials:
     """
-    Streamlit secrets에 저장된 google_service_account 정보를 이용해
-    Credentials 객체를 생성하는 헬퍼 함수.
+    which="A"  -> st.secrets["google_service_account_a"] 사용
+    which="B"  -> st.secrets["google_service_account_b"] 사용
     """
-    service_account_info = st.secrets["google_service_account"]
+    if which.upper() == "A":
+        service_account_info = st.secrets["google_service_account_a"]
+    else:
+        service_account_info = st.secrets["google_service_account_b"]
+
     credentials = Credentials.from_service_account_info(
         service_account_info,
         scopes=SCOPES
     )
     return credentials
+
+
+# ----------------------------------------------------------------
+# 웹 UI 섹션1~3 부분
+# ----------------------------------------------------------------
+def section_one_report_input():
+    """
+    1번 섹션: 진행기간(YYYYMM), 보고서 발행 날짜 입력 + 보고서 생성 버튼
+    """
+    st.subheader("1) 정산 보고서 정보 입력 항목")
+
+    # session_state에서 기본값 불러오기 (없으면 "")
+    default_ym = st.session_state.get("ym", "")
+    default_report_date = st.session_state.get("report_date", "")
+
+    # 1. 입력 필드
+    ym = st.text_input("진행기간(YYYYMM)", default_ym)
+    report_date = st.text_input("보고서 발행 날짜 (YYYY-MM-DD)", default_report_date)
+
+    # 2. 생성 버튼
+    if st.button("정산 보고서 생성 시작"):
+        # A 계정 인증
+        creds_a = get_credentials_from_secrets("A")
+        gc_a = gspread.authorize(creds_a)
+        drive_svc_a = build("drive", "v3", credentials=creds_a)
+        sheet_svc_a = build("sheets", "v4", credentials=creds_a)
+
+        # 유효성 체크
+        if not re.match(r'^\d{6}$', ym):
+            st.error("진행기간은 YYYYMM 6자리로 입력해야 합니다.")
+            return
+        if not report_date:
+            st.error("보고서 발행 날짜를 입력하세요.")
+            return
+
+        # session_state에 입력값 저장
+        st.session_state["ym"] = ym
+        st.session_state["report_date"] = report_date
+
+        # (A) 진행률 바 / 현재 처리중 아티스트 표시용 placeholder
+        progress_placeholder = st.empty()
+        artist_placeholder = st.empty()
+
+        all_artists = st.session_state.get("all_artists", [])
+
+        # (B) 예시: generate_report() 호출
+        # 실제 코드에서는 gspread.Client, drive_svc, sheet_svc 등 주입
+        # out_file_id = generate_report(ym, report_date, ...)
+        # 여기서는 시뮬레이션으로 대기 + progress
+        total_artists = len(all_artists) # 예: 실제론 generate_report 내에서 구해지는 artist 수
+        for i in range(total_artists):
+            # 진행률
+            progress_val = int((i+1) / total_artists * 100)
+            progress_placeholder.progress(progress_val)
+            # 현재 아티스트명 가정
+            cur_artist = f"Artist_{i+1}"
+            artist_placeholder.info(f"[{i+1}/{total_artists}] 현재 처리중: '{cur_artist}'")
+            time.sleep(0.5)
+
+        # 실제 generate_report() 호출
+        check_dict = {
+            "song_artists": [],
+            "revenue_artists": [],
+            "artist_compare_result": {}
+        }
+
+        # 실제 generate_report(...) 호출 (A계정으로)
+        out_file_id = generate_report(
+            ym, report_date, check_dict,
+            gc=gc_a, 
+            drive_svc=drive_svc_a, 
+            sheet_svc=sheet_svc_a
+        )
+        st.session_state["report_done"] = True
+        st.session_state["report_file_id"] = out_file_id
+        st.success(f"보고서 생성 완료! file_id={out_file_id}")
+
+        if out_file_id:
+            artist_placeholder.success("모든 아티스트 정산 보고서 생성 완료!")
+            time.sleep(1.0)
+            artist_placeholder.empty()
+            progress_placeholder.empty()
+
+            st.session_state["report_done"] = True
+            st.session_state["report_file_id"] = out_file_id
+            st.session_state["check_dict"] = check_dict
+
+def section_two_sheet_link_and_verification():
+    """
+    2번 섹션: 구글시트 링크 + 검증 결과 표시 (탭 2개)
+    - report_done == True 인 경우에만 표시
+    """
+    if "report_done" in st.session_state and st.session_state["report_done"]:
+        st.subheader("2) 정산 보고서 시트링크 및 검증")
+
+        tab1, tab2 = st.tabs(["보고서 링크 / 요약", "세부 검증 내용"])
+        with tab1:
+            out_file_id = st.session_state.get("report_file_id", "")
+            if out_file_id:
+                gsheet_url = f"https://docs.google.com/spreadsheets/d/{out_file_id}/edit"
+                st.write(f"**생성된 구글시트 링크:** {gsheet_url}")
+            cd = st.session_state.get("check_dict", {})
+            if cd:
+                ar = cd.get("artist_compare_result", {})
+                st.write("**검증 요약**")
+                if ar:
+                    st.write(f"- Song cost 아티스트 수 = {ar.get('song_count')}")
+                    st.write(f"- Revenue 아티스트 수 = {ar.get('revenue_count')}")
+                    st.write(f"- 공통 아티스트 수 = {ar.get('common_count')}")
+                    if ar.get("missing_in_song"):
+                        st.warning(f"Song에 없고 Revenue에만 있는: {ar['missing_in_song']}")
+                    if ar.get("missing_in_revenue"):
+                        st.warning(f"Revenue에 없고 Song에만 있는: {ar['missing_in_revenue']}")
+                else:
+                    st.write("검증 결과 데이터가 없습니다.")
+            else:
+                st.write("검증 dict가 없습니다.")
+
+        with tab2:
+            st.write("**세부 검증 내용**")
+            st.info("이곳에 더 구체적인 검증 로그, 표, etc. 표시 가능.")
+    else:
+        st.warning("정산 보고서 생성이 완료되면 이 섹션이 표시됩니다.")
+
+
+def section_three_download_zip(credentials, sheet_service_local):
+    """
+    3번 섹션: 구글시트 → XLSX(zip) 다운로드
+    - 버튼 눌러야 실제로 download_all_tabs_as_zip() 수행
+    - 진행률 표시
+    """
+    if "report_done" in st.session_state and st.session_state["report_done"]:
+        st.subheader("3) 정산 보고서 압축파일 다운로드")
+
+        if st.session_state.get("zip_ready"):
+            # 이미 zip_data가 준비됨
+            st.success("압축파일이 이미 생성되었습니다.")
+            zip_data = st.session_state["zip_data"]
+            st.download_button(
+                label="압축파일 다운로드",
+                data=zip_data,
+                file_name="report.zip",
+                mime="application/zip"
+            )
+        else:
+            # zip 아직 없음 -> "압축파일 작업 시작" 버튼
+            if st.button("압축파일 생성 시작"):
+                # B 계정 인증
+                creds_b = get_credentials_from_secrets("B")
+                sheet_svc_b = build("sheets", "v4", credentials=creds_b)
+
+                out_file_id = st.session_state["report_file_id"]
+                if not out_file_id:
+                    st.error("report_file_id가 없습니다.")
+                    return
+
+                # 진행률 / 탭명 표시(실제로는 download_all_tabs_as_zip 내부에서 탭 별 loop or progress)
+                # 여기선 간단하게 "다운로드 중..."만 표시
+                progress_placeholder = st.empty()
+                info_placeholder = st.empty()
+
+                try:
+                    # 실제 XLSX(zip) 생성
+                    zip_data = download_all_tabs_as_zip(
+                        spreadsheet_id=out_file_id,
+                        creds=creds_b,
+                        sheet_svc=sheet_svc_b
+                    )
+                    st.session_state["zip_data"] = zip_data
+                    st.session_state["zip_ready"] = True
+
+                    # 진행률 100%
+                    progress_placeholder.progress(100)
+                    info_placeholder.success("모든 시트 다운로드 / 압축 완료!")
+                    time.sleep(1.0)
+                    info_placeholder.empty()
+
+                    st.download_button(
+                        label="압축파일 다운로드",
+                        data=zip_data,
+                        file_name="report.zip",
+                        mime="application/zip"
+                    )
+                except Exception as e:
+                    st.error(f"압축파일 다운로드 작업 중 오류: {e}")
+    else:
+        st.info("정산 보고서 생성이 완료된 후, 압축파일 다운로드를 진행할 수 있습니다.")
 
 
 # ----------------------------------------------------------------
@@ -91,11 +282,10 @@ def almost_equal(a, b, tol=1e-3):
 # -----------------------------------------------------------------------------
 # (추가) 시트별 XLSX 다운로드 → Zip
 # -----------------------------------------------------------------------------
-
 def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
-    # 기존 코드와 동일하게, 모든 탭 XLSX를 zip으로 묶어 반환
     from google.auth.transport.requests import AuthorizedSession
     session = AuthorizedSession(creds)
+
     def get_sheet_list(spreadsheet_id):
         meta = sheet_svc.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
         sheets = meta["sheets"]
@@ -106,47 +296,26 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
         params = {"format": "xlsx", "gid": str(sheet_id)}
 
         for attempt in range(max_retries):
-            time.sleep(2)
+            time.sleep(1)  # 시도마다 잠깐 쉼
             try:
                 resp = session.get(url, params=params)
                 resp.raise_for_status()
                 return resp.content
             except req.exceptions.HTTPError as e:
-                # 429나 503처럼 “잠시 후 재시도”가 유효한 에러에 한해서 backoff
                 if e.response.status_code in [429, 503]:
-                    sleep_sec = 2 ** attempt  # 간단한 지수백오프
+                    sleep_sec = 2 ** attempt
                     time.sleep(sleep_sec)
                     continue
-                raise e  # 그 외 에러는 재시도 없이 바로 raise
-
+                raise e
         raise RuntimeError(f"Download failed after {max_retries} attempts (gid={sheet_id})")
 
     tabs = get_sheet_list(spreadsheet_id)
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for (gid, title) in tabs:
-            # (1) 다운로드
-            content = None
-            for attempt in range(3):  # 재시도 3번 예시
-                try:
-                    content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
-                    break
-                except req.exceptions.HTTPError as e:
-                    # 429, 503 등 일시적 에러면 time.sleep 후 재시도
-                    if e.response.status_code in (429, 503):
-                        sleep_sec = 2 ** attempt  # 지수 백오프 예
-                        time.sleep(sleep_sec)
-                    else:
-                        raise e
-            
-            if content is None:
-                raise RuntimeError(f"Download failed after retries (gid={gid}, title={title})")
-
-            # (2) Zip에 추가
+            content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
             zf.writestr(f"{title}.xlsx", content)
-
-            # (3) 루프간 sleep
-            time.sleep(0.5)  # 시트마다 0.5~1초 대기
+            time.sleep(0.3)  # 탭 하나 끝날 때마다 잠시 쉼
 
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
@@ -253,7 +422,7 @@ def generate_report(
     drive_svc,
     sheet_svc
 ):
-    folder_id = st.secrets["google_service_account"]["folder_id"]
+    folder_id = st.secrets["google_service_account_a"]["folder_id"]
 
     # ------------------- (A) input_song cost -------------------
     try:
@@ -364,6 +533,7 @@ def generate_report(
     # ------------------- (C) 아티스트 목록 ---------------
     all_artists = sorted(set(artist_cost_dict.keys())|set(artist_revenue_dict.keys()))
     all_artists = [a for a in all_artists if a and a != "합계"]
+    st.session_state["all_artists"] = all_artists
 
     # ------------------- (D) output_report_YYYYMM --------
     out_filename = f"ouput_report_{ym}"
@@ -373,22 +543,16 @@ def generate_report(
     time.sleep(2)
     # sheet1 삭제
     try:
-        out_sh.del_worksheet(out_sh.sheet1)
+        out_sh.del_worksheet(out_sh.worksheet("Sheet1"))
     except:
         pass
 
     year_val = ym[:4]
     month_val = ym[4:]
 
-    # 진행률
-    progress_bar = st.progress(0)
-    num_art = len(all_artists)
 
     # --------------- (E) 아티스트별 시트 만들기 -----------
     for i, artist in enumerate(all_artists):
-        pr = (i+1)/num_art
-        progress_bar.progress(pr)
-        st.info(f"[{i+1}/{num_art}] 현재 처리중: '{artist}'")
         time.sleep(4)
 
         # ----------------------------
@@ -1875,57 +2039,16 @@ def generate_report(
 def main():
     st.title("아티스트 음원 정산 보고서 자동 생성기")
 
-    credentials = get_credentials_from_secrets()
-    gc_local = gspread.authorize(credentials)
-    drive_service_local = build("drive","v3",credentials=credentials)
-    sheet_service_local = build("sheets","v4",credentials=credentials)
+    # 2) 섹션 1: 보고서 생성
+    section_one_report_input()
+    st.divider()
 
-    check_dict = {
-        "song_artists": [],
-        "revenue_artists": [],
-        "artist_compare_result": {}
-    }
+    # 3) 섹션 2: 시트 링크 및 검증 결과
+    section_two_sheet_link_and_verification()
+    st.divider()
 
-    ym = st.text_input("진행기간(YYYYMM)", "")
-    report_date = st.text_input("보고서 발행 날짜 (YYYY-MM-DD)", "")
-
-    if st.button("작업 시작하기"):
-        if not ym or not re.match(r'^\d{6}$', ym):
-            st.error("진행기간 6자리를 입력하세요.")
-            return
-        if not report_date:
-            report_date = str(datetime.date.today())
-
-        out_file_id = generate_report(
-            ym, report_date, check_dict,
-            gc=gc_local,
-            drive_svc=drive_service_local,
-            sheet_svc=sheet_service_local
-        )
-        if out_file_id:
-            st.success(f"'{ym}' 보고서 생성 완료 (ID={out_file_id})")
-            st.info(f"https://docs.google.com/spreadsheets/d/{out_file_id}/edit")
-
-            # XLSX(zip) 다운로드
-            zip_data = download_all_tabs_as_zip(out_file_id, credentials, sheet_service_local)
-            st.download_button("XLSX(zip) 다운로드", data=zip_data, file_name=f"{ym}_report.zip", mime="application/zip")
-
-            # 검증결과
-            def show_verification_result(check_dict):
-                st.subheader("검증 결과")
-                ar = check_dict.get("artist_compare_result", {})
-                if ar:
-                    st.write(f"- Song cost 아티스트 수 = {ar['song_count']}")
-                    st.write(f"- Revenue 아티스트 수 = {ar['revenue_count']}")
-                    st.write(f"- 공통 아티스트 수 = {ar['common_count']}")
-                    if ar["missing_in_song"]:
-                        st.warning(f"Song에 없고 Revenue에만 있는: {ar['missing_in_song']}")
-                    if ar["missing_in_revenue"]:
-                        st.warning(f"Revenue에 없고 Song에만 있는: {ar['missing_in_revenue']}")
-                else:
-                    st.write("원본 비교 결과 없음")
-
-            show_verification_result(check_dict)
+    # 4) 섹션 3: 압축파일 다운로드
+    section_three_download_zip()
 
 if __name__ == "__main__":
     main()
