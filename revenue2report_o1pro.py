@@ -168,7 +168,7 @@ def section_three_download_zip():
     if "report_done" in st.session_state and st.session_state["report_done"]:
         st.subheader("3) 정산 보고서 압축파일 다운로드")
         
-        time.sleep(5)
+        time.sleep(3)
 
         if st.session_state.get("zip_ready"):
             # 이미 zip_data가 준비됨
@@ -192,23 +192,26 @@ def section_three_download_zip():
                     st.error("report_file_id가 없습니다.")
                     return
 
-                # 진행률 / 탭명 표시(실제로는 download_all_tabs_as_zip 내부에서 탭 별 loop or progress)
-                # 여기선 간단하게 "다운로드 중..."만 표시
+                # 실제 진행률 표시할 프로그레스 바
                 progress_placeholder = st.empty()
+                progress_bar = progress_placeholder.progress(0)
+
                 info_placeholder = st.empty()
+                info_placeholder.info("다운로드 중...")
 
                 try:
                     # 실제 XLSX(zip) 생성
                     zip_data = download_all_tabs_as_zip(
                         spreadsheet_id=out_file_id,
                         creds=creds_b,
-                        sheet_svc=sheet_svc_b
+                        sheet_svc=sheet_svc_b,
+                        progress_bar=progress_bar  # 여기서 인자를 넘긴다
                     )
                     st.session_state["zip_data"] = zip_data
                     st.session_state["zip_ready"] = True
 
                     # 진행률 100%
-                    progress_placeholder.progress(100)
+                    progress_placeholder.progress(1.0)
                     info_placeholder.success("모든 시트 다운로드 / 압축 완료!")
                     time.sleep(1)
                     info_placeholder.empty()
@@ -270,7 +273,7 @@ def almost_equal(a, b, tol=1e-3):
 # -----------------------------------------------------------------------------
 # (추가) 시트별 XLSX 다운로드 → Zip
 # -----------------------------------------------------------------------------
-def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
+def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, progress_bar=None) -> bytes:
     from google.auth.transport.requests import AuthorizedSession
     session = AuthorizedSession(creds)
 
@@ -317,14 +320,25 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc) -> bytes:
                     # 그 외 상태 코드는 그냥 에러
                     raise e
         raise RuntimeError(f"Download failed after {max_retries} attempts (gid={sheet_id})")
-
+    
+    # 1) 스프레드시트 탭 목록 가져오기
     tabs = get_sheet_list(spreadsheet_id)
+    total = len(tabs)
+
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for (gid, title) in tabs:
+        for i, (gid, title) in enumerate(tabs):
+            # (A) 각 탭 XLSX 다운로드
             content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
             zf.writestr(f"{title}.xlsx", content)
-            time.sleep(2)  # 탭 하나 끝날 때마다 잠시 쉼
+
+            # (B) 탭 하나 완료 후 약간 쉼
+            time.sleep(1)
+
+            # (C) 진행률 갱신 (if progress_bar is not None)
+            if progress_bar is not None and total > 0:
+                ratio = (i + 1) / total
+                progress_bar.progress(ratio)
 
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
