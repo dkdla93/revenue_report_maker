@@ -281,7 +281,7 @@ def download_selected_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, tab_key
 
         return sheet_list
 
-    def download_sheet_as_xlsx(spreadsheet_id, sheet_id, session, max_retries=3):
+    def download_sheet_as_xlsx(spreadsheet_id, sheet_id, session, max_retries=5):
         url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
         params = {"format": "xlsx", "gid": str(sheet_id)}
 
@@ -300,7 +300,10 @@ def download_selected_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, tab_key
                     continue
                 else:
                     raise e
-        raise RuntimeError(f"Download failed after {max_retries} attempts (gid={sheet_id})")
+        
+        # 여기까지 왔다는 것은 max_retries 번 모두 실패한 것
+        print(f"[WARN] Failed to download tab gid={sheet_id} after {max_retries} attempts. Skipping this tab.")
+        return None
 
     # 1) 해당 keyword가 들어간 탭 목록만 필터링
     tabs = get_sheet_list(spreadsheet_id)
