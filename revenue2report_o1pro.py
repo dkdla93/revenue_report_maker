@@ -113,7 +113,7 @@ def section_one_report_input():
 
         if out_file_id:
             artist_placeholder.success("모든 아티스트 정산 보고서 생성 완료!")
-            time.sleep(1.0)
+            time.sleep(1)
             artist_placeholder.empty()
             progress_bar.empty()
 
@@ -208,7 +208,7 @@ def section_three_download_zip():
                     # 진행률 100%
                     progress_placeholder.progress(100)
                     info_placeholder.success("모든 시트 다운로드 / 압축 완료!")
-                    time.sleep(1.0)
+                    time.sleep(1)
                     info_placeholder.empty()
 
                     st.download_button(
@@ -557,7 +557,6 @@ def generate_report(
     out_file_id = create_new_spreadsheet(out_filename, folder_id, drive_svc)
     out_sh = gc.open_by_key(out_file_id)
     
-    time.sleep(2)
     # sheet1 삭제
     try:
         out_sh.del_worksheet(out_sh.worksheet("Sheet1"))
@@ -597,7 +596,6 @@ def generate_report(
         artist_placeholder.info(f"[{i+1}/{len(all_artists)}] '{artist}' 처리 중...")
 
         # (실제 처리 로직 / time.sleep 등)
-        time.sleep(1)
 
         # ----------------------------
         # 세부매출내역 탭
@@ -828,7 +826,14 @@ def generate_report(
         
         all_requests.extend(detail_requests)
 
-        time.sleep(2)
+        # (추가) 분할 batchUpdate 체크
+        if len(all_requests) >= 80:  # 예: 80개 정도마다 전송
+            sheet_svc.spreadsheets().batchUpdate(
+                spreadsheetId=out_file_id,
+                body={"requests": all_requests}
+            ).execute()
+            all_requests.clear()     # 전송 후 비우기
+            time.sleep(2)           # 잠시 쉼 (네트워크 안정화)
 
         # ------------------------------------------------------
         # 정산서 탭 (batchUpdate 방식)
@@ -2031,6 +2036,16 @@ def generate_report(
         
         all_requests.extend(report_requests)
 
+        # (추가) 분할 batchUpdate 체크
+        if len(all_requests) >= 80:
+            sheet_svc.spreadsheets().batchUpdate(
+                spreadsheetId=out_file_id,
+                body={"requests": all_requests}
+            ).execute()
+            all_requests.clear()
+            time.sleep(2)
+
+
     # -----------------
     # batchUpdate 실행
     # -----------------
@@ -2039,6 +2054,7 @@ def generate_report(
             spreadsheetId=out_file_id,
             body={"requests": all_requests}
         ).execute()
+        all_requests.clear()
 
     time.sleep(2)
 
@@ -2075,7 +2091,7 @@ def generate_report(
                 values=updated,
                 value_input_option="USER_ENTERED"
             )
-        time.sleep(2)   
+        time.sleep(1)   
     return out_file_id
 
 # ========== [5] Streamlit UI =============
