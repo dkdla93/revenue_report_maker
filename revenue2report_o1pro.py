@@ -91,21 +91,6 @@ def section_one_report_input():
         progress_placeholder = st.empty()
         artist_placeholder = st.empty()
 
-        all_artists = st.session_state.get("all_artists", [])
-
-        # (B) 예시: generate_report() 호출
-        # 실제 코드에서는 gspread.Client, drive_svc, sheet_svc 등 주입
-        # out_file_id = generate_report(ym, report_date, ...)
-        # 여기서는 시뮬레이션으로 대기 + progress
-        total_artists = len(all_artists) # 예: 실제론 generate_report 내에서 구해지는 artist 수
-        for i in range(total_artists):
-            # 진행률
-            progress_val = int((i+1) / total_artists * 100)
-            progress_placeholder.progress(progress_val)
-            # 현재 아티스트명 가정
-            cur_artist = f"Artist_{i+1}"
-            artist_placeholder.info(f"[{i+1}/{total_artists}] 현재 처리중: '{cur_artist}'")
-            time.sleep(0.5)
 
         # 실제 generate_report() 호출
         check_dict = {
@@ -173,7 +158,7 @@ def section_two_sheet_link_and_verification():
         st.warning("정산 보고서 생성이 완료되면 이 섹션이 표시됩니다.")
 
 
-def section_three_download_zip(credentials, sheet_service_local):
+def section_three_download_zip():
     """
     3번 섹션: 구글시트 → XLSX(zip) 다운로드
     - 버튼 눌러야 실제로 download_all_tabs_as_zip() 수행
@@ -534,6 +519,13 @@ def generate_report(
     all_artists = sorted(set(artist_cost_dict.keys())|set(artist_revenue_dict.keys()))
     all_artists = [a for a in all_artists if a and a != "합계"]
     st.session_state["all_artists"] = all_artists
+
+    # 진행률 바 초기화
+    progress_bar = st.progress(0)
+    for i, artist in enumerate(all_artists):
+        ratio = (i+1) / len(all_artists)
+        progress_bar.progress(ratio)
+        st.info(f"[{i+1}/{len(all_artists)}] 현재 '{artist}' 처리 중...")
 
     # ------------------- (D) output_report_YYYYMM --------
     out_filename = f"ouput_report_{ym}"
