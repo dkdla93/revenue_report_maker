@@ -302,19 +302,18 @@ def download_all_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, progress_bar
         params = {"format": "xlsx", "gid": str(sheet_id)}
 
         for attempt in range(max_retries):
-            time.sleep(2)  # 시도마다 잠깐 쉼
+            time.sleep(1)  # 시도마다 잠깐 쉼
             try:
                 resp = session.get(url, params=params)
                 resp.raise_for_status()
                 return resp.content
             except req.exceptions.HTTPError as e:
                 if e.response.status_code in [429, 500, 503]:
-                    sleep_sec = 2 ** attempt
+                    sleep_sec = 0.5 ** attempt
                     time.sleep(sleep_sec)
                     continue
                 elif e.response.status_code in [403, 404]:
                     # 403, 404도 1~2초 뒤 재시도 해볼 만함
-                    time.sleep(2)
                     continue
                 else:
                     # 그 외 상태 코드는 그냥 에러
