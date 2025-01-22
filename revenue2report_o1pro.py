@@ -540,19 +540,22 @@ def to_currency(num):
 
 def update_next_month_tab(song_cost_sh, ym: str):
     """
-    1) 이전 달(ym) 탭에서 아티스트별 당월 잔액을 수집
-    2) 다음 달 탭(next_ym)을 복제해서, 복제본의 '전월 잔액'에 1)번 값을 반영
+    1) 이전 달(ym) 탭에서 아티스트별 '당월 잔액'을 수집
+    2) 다음 달 탭(next_ym)을 복제
+    3) 복제본의 '전월 잔액'을 (1)에서 가져온 값으로 세팅,
+       그리고 '당월 차감액', '당월 잔액' 컬럼은 모두 0으로 초기화
     """
 
+    # (A) 이전 달 탭의 '아티스트명' & '당월 잔액' 읽어오기
     old_ws = song_cost_sh.worksheet(ym)
     old_data = old_ws.get_all_values()
     if not old_data:
+        print(f"'{ym}' 탭이 비어 있음")
         return
 
     old_header = old_data[0]
-    old_body = old_data[1:]
+    old_body   = old_data[1:]
 
-    # 컬럼 인덱스 찾기
     try:
         idx_artist_old = old_header.index("아티스트명")
         idx_remain_old = old_header.index("당월 잔액")
@@ -560,16 +563,16 @@ def update_next_month_tab(song_cost_sh, ym: str):
         print("이전 달 시트에 '아티스트명' 또는 '당월 잔액' 칼럼이 없습니다.")
         return
 
-    # (A) '아티스트명' -> '당월 잔액' 딕셔너리 만들기
     prev_month_dict = {}
     for row in old_body:
         artist_name = row[idx_artist_old].strip()
         if not artist_name or artist_name in ("합계","총계"):
             continue
         try:
-            remain_val = float(row[idx_remain_old].replace(",",""))
+            remain_val = float(row[idx_remain_old].replace(",", ""))
         except:
             remain_val = 0.0
+
         prev_month_dict[artist_name] = remain_val
 
     # (B) 다음 달 탭 생성 (복제)
@@ -584,30 +587,41 @@ def update_next_month_tab(song_cost_sh, ym: str):
     try:
         idx_artist_new = new_header.index("아티스트명")
         idx_prev_new   = new_header.index("전월 잔액")
+
+        # ★ '당월 차감액', '당월 잔액'도 찾아서 0으로 세팅
+        idx_deduct_new = new_header.index("당월 차감액")
+        idx_remain_new = new_header.index("당월 잔액")
+
     except ValueError:
-        print("새로 만든 시트(다음 달 탭)에 '아티스트명' 또는 '전월 잔액' 칼럼이 없습니다.")
+        print("새로 만든 시트(다음 달 탭)에 필요한 칼럼('아티스트명', '전월 잔액', '당월 차감액', '당월 잔액')이 없습니다.")
         return
 
+    # (C) 각 행 업데이트
     content = new_data[1:]
     updated = []
     for row in content:
         row_data = row[:]
         artist_name_new = row_data[idx_artist_new].strip()
 
-        # 만약 (이전 달 dict)에 존재하면 → 당월 잔액 값을 가져다가 전월 잔액에 세팅
+        # 1) 전월 잔액 = 이전 달 탭의 '당월 잔액'
         if artist_name_new in prev_month_dict:
             row_data[idx_prev_new] = str(prev_month_dict[artist_name_new])
-        # 합계 행이나 없는 아티스트는 그냥 둠
+
+        # 2) '당월 차감액'과 '당월 잔액'을 0으로 설정
+        row_data[idx_deduct_new] = "0"
+        row_data[idx_remain_new] = "0"
 
         updated.append(row_data)
 
-    # (C) 업데이트
+    # (D) 업데이트 반영
     if updated:
         new_ws.update(
             range_name="A2",
             values=updated,
             value_input_option="USER_ENTERED"
         )
+    print(f"'{ym}' → '{next_ym}' 탭 복제 및 전월/당월 잔액 세팅 완료!")
+
 
 
 # ========== [4] 핵심 로직: generate_report =============
@@ -2363,7 +2377,7 @@ def generate_report(
     update_next_month_tab(song_cost_sh, ym)
   
     time.sleep(1)   
-    
+
     return out_file_id
 
 # ========== [5] Streamlit UI =============
