@@ -755,29 +755,6 @@ def generate_report(
 
         time.sleep(3)        
 
-
-        # ---------------------------------------------------------
-        # 계산된 값들 -> check_dict["details_per_artist"][artist] 에 저장
-        # ---------------------------------------------------------
-        check_dict["details_per_artist"][artist] = {
-            "input_전월잔액": prev_val,
-            "input_당월차감액": deduct_val,
-            "input_당월잔액": remain_val,
-            "input_정산요율(%)": rate_val,
-
-            "calc_앨범매출합계": sum_2,
-            "calc_공제적용": 공제적용,
-            "calc_최종정산금액": final_amount,
-
-            # 추가로, ex) 차이 비교 예시
-            #  - (remain_val + deduct_val)와 (prev_val) 의 차이가 0이면 정상
-            #  - sum_2 - deduct_val 과 공제적용 이 같은지 등
-            "diff_공제_검증": (sum_2 - deduct_val) - 공제적용,
-            "diff_잔액_검증": (prev_val - deduct_val) - remain_val,
-        }
-
-
-
         # build requests:
         detail_requests = []
 
@@ -1129,6 +1106,32 @@ def generate_report(
         ws_report.update(
             range_name="A1",
             values=report_matrix)
+
+
+
+        # ---------------------------------------------------------
+        # 계산된 값들 -> check_dict["details_per_artist"][artist] 에 저장
+        # ---------------------------------------------------------
+        check_dict["details_per_artist"][artist] = {
+            "input_전월잔액": prev_val,
+            "input_당월차감액": deduct_val,
+            "input_당월잔액": remain_val,
+            "input_정산요율(%)": rate_val,
+
+            "calc_앨범매출합계": sum_2,
+            "calc_공제적용": 공제적용,
+            "calc_최종정산금액": final_amount,
+
+            # 추가로, ex) 차이 비교 예시
+            #  - (remain_val + deduct_val)와 (prev_val) 의 차이가 0이면 정상
+            #  - sum_2 - deduct_val 과 공제적용 이 같은지 등
+            "diff_공제_검증": (sum_2 - deduct_val) - 공제적용,
+            "diff_잔액_검증": (prev_val - deduct_val) - remain_val,
+        }
+
+
+
+
 
         time.sleep(3)   
 
