@@ -124,6 +124,7 @@ def section_one_report_input():
             st.session_state["report_file_id"] = out_file_id
             st.session_state["check_dict"] = check_dict
 
+
 def section_two_sheet_link_and_verification():
     """
     2번 섹션: 구글시트 링크 + 검증 결과 표시 (탭 2개)
@@ -132,12 +133,18 @@ def section_two_sheet_link_and_verification():
     if "report_done" in st.session_state and st.session_state["report_done"]:
         st.subheader("2) 정산 보고서 시트링크 및 검증")
 
+        # 탭 생성
         tab1, tab2 = st.tabs(["보고서 링크 / 요약", "세부 검증 내용"])
+
+        # -------------------------
+        # (A) 첫 번째 탭: 링크/요약
+        # -------------------------
         with tab1:
             out_file_id = st.session_state.get("report_file_id", "")
             if out_file_id:
                 gsheet_url = f"https://docs.google.com/spreadsheets/d/{out_file_id}/edit"
                 st.write(f"**생성된 구글시트 링크:** {gsheet_url}")
+
             cd = st.session_state.get("check_dict", {})
             if cd:
                 ar = cd.get("artist_compare_result", {})
@@ -155,11 +162,57 @@ def section_two_sheet_link_and_verification():
             else:
                 st.write("검증 dict가 없습니다.")
 
+        # -------------------------
+        # (B) 두 번째 탭: 세부 검증
+        # -------------------------
         with tab2:
-            st.write("**세부 검증 내용**")
-            st.info("이곳에 더 구체적인 검증 로그, 표, etc. 표시 가능.")
+            st.write("### 세부 검증 내용")
+            st.info("인풋데이터 vs. 산출결과 비교")
+
+            check_dict = st.session_state.get("check_dict", {})
+            details_per_artist = check_dict.get("details_per_artist", {})
+
+            if not details_per_artist:
+                # 만약 generate_report 쪽에서 details_per_artist를 기록하지 않았다면,
+                # 이 부분이 empty일 수 있으므로 경고
+                st.warning("세부 검증용 데이터가 존재하지 않습니다.")
+            else:
+                import pandas as pd
+
+                # details_per_artist 구조:
+                # {
+                #   "아티스트A": {"input_전월잔액":..., "input_당월차감액":..., ... "calc_최종정산금액": ...},
+                #   "아티스트B": {...},
+                #   ...
+                # }
+
+                # (1) DataFrame 생성
+                df_list = []
+                for artist, val_dict in details_per_artist.items():
+                    row = {"아티스트": artist}
+                    row.update(val_dict)  # val_dict의 key/value를 row에 추가
+                    df_list.append(row)
+
+                df = pd.DataFrame(df_list)
+
+                # (2) 화면에 표시
+                st.dataframe(df)
+
+                # 필요시 특정 컬럼만 골라 표시할 수도 있음:
+                # selected_cols = [
+                #     "아티스트",
+                #     "input_전월잔액", "input_당월차감액", "input_당월잔액",
+                #     "calc_앨범매출합계", "calc_공제적용", "calc_최종정산금액",
+                #     "diff_공제_검증", "diff_잔액_검증"
+                # ]
+                # st.dataframe(df[selected_cols])
+
     else:
         st.warning("정산 보고서 생성이 완료되면 이 섹션이 표시됩니다.")
+
+
+
+
 
 
 def section_three_upload_and_split_excel():
@@ -599,6 +652,13 @@ def generate_report(
             "revenue": rv_val
         })
 
+
+    # ---------------------------------------------------------
+    # [추가] 체크 딕셔너리 안에 details_per_artist 키 준비
+    # ---------------------------------------------------------
+    if "details_per_artist" not in check_dict:
+        check_dict["details_per_artist"] = {}
+
     # 검증
     song_artists = [r[idx_artist] for r in rows_sc if r[idx_artist]]
     revenue_artists = [r[col_aartist].strip() for r in rows_or if r[col_aartist].strip()]
@@ -694,6 +754,29 @@ def generate_report(
         )
 
         time.sleep(3)        
+
+
+        # ---------------------------------------------------------
+        # 계산된 값들 -> check_dict["details_per_artist"][artist] 에 저장
+        # ---------------------------------------------------------
+        check_dict["details_per_artist"][artist] = {
+            "input_전월잔액": prev_val,
+            "input_당월차감액": deduct_val,
+            "input_당월잔액": remain_val,
+            "input_정산요율(%)": rate_val,
+
+            "calc_앨범매출합계": sum_2,
+            "calc_공제적용": 공제적용,
+            "calc_최종정산금액": final_amount,
+
+            # 추가로, ex) 차이 비교 예시
+            #  - (remain_val + deduct_val)와 (prev_val) 의 차이가 0이면 정상
+            #  - sum_2 - deduct_val 과 공제적용 이 같은지 등
+            "diff_공제_검증": (sum_2 - deduct_val) - 공제적용,
+            "diff_잔액_검증": (prev_val - deduct_val) - remain_val,
+        }
+
+
 
         # build requests:
         detail_requests = []
