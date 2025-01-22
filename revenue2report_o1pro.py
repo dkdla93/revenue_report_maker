@@ -22,9 +22,12 @@ from gspread_formatting import (
     set_row_height
 )
 
-# 추가: AuthorizedSession (시트별 XLSX 다운로드 시 사용)
-from google.auth.transport.requests import AuthorizedSession
+# (기존) collections
 from collections import defaultdict
+
+# (신규) openpyxl
+import openpyxl
+from openpyxl import Workbook
 
 
 # ========== [1] 인증/초기설정 =============
@@ -159,169 +162,64 @@ def section_two_sheet_link_and_verification():
         st.warning("정산 보고서 생성이 완료되면 이 섹션이 표시됩니다.")
 
 
-def section_three_download_zip():
+def section_three_upload_and_split_excel():
     """
-    3번 섹션: 구글시트 → XLSX(zip) 다운로드
-    - 버튼 눌러야 실제로 download_all_tabs_as_zip() 수행
-    - 진행률 표시
+    3번 섹션 (새로운 버전):
+    - 사용자가 구글시트(정산 보고서 파일)에서 [파일→다운로드→Microsoft Excel]로 받은 xlsx를
+      여기 업로드하면, 시트별로 분할하여 ZIP으로 묶어 다운로드.
     """
     if "report_done" in st.session_state and st.session_state["report_done"]:
-        st.subheader("3) 정산 보고서 압축파일 다운로드")
-        
-        time.sleep(3)
-        
-        out_file_id = st.session_state.get("report_file_id", "")
-        if not out_file_id:
-            st.warning("report_file_id가 없습니다.")
-            return
+        st.subheader("3) '엑셀(.xlsx)' 파일 업로드 후, 시트별 파일 분할 / ZIP 다운로드")
 
-        # 첫 번째 버튼: 정산서만 다운로드
-        if st.button("정산서 탭만 ZIP 다운로드"):
-            creds_b = get_credentials_from_secrets("B")
-            sheet_svc_b = build("sheets", "v4", credentials=creds_b)
+        st.write("""
+        1. 위의 "보고서 링크"로 이동해 시트를 열어주세요.  
+        2. 구글시트 메뉴에서 "**파일 → 다운로드 → Microsoft Excel (.xlsx)**" 로 저장하세요.  
+        3. 아래 업로드 버튼에 그 **엑셀 파일**을 올려주세요.  
+        4. 그러면 시트별로 분할 & 압축하여 다운로드할 수 있습니다.
+        """)
 
-            progress_placeholder = st.empty()
-            progress_bar = progress_placeholder.progress(0.0)
-            info_placeholder = st.empty()
-
-            info_placeholder.info("정산서 탭 다운로드 중...")
-
+        uploaded_file = st.file_uploader("엑셀 파일 업로드", type=["xlsx"])
+        if uploaded_file is not None:
+            # 1) openpyxl로 파일 로드
             try:
-                zip_data_report = download_selected_tabs_as_zip(
-                    spreadsheet_id=out_file_id,
-                    creds=creds_b,
-                    sheet_svc=sheet_svc_b,
-                    tab_keyword="(정산서)",
-                    progress_bar=progress_bar
-                )
-                progress_placeholder.progress(1.0)
-                info_placeholder.success("정산서 탭 다운로드 / 압축 완료!")
-                time.sleep(1)
-                info_placeholder.empty()
-
-                st.download_button(
-                    label="정산서.zip 다운로드",
-                    data=zip_data_report,
-                    file_name="정산서.zip",
-                    mime="application/zip"
-                )
-
+                wb = openpyxl.load_workbook(uploaded_file, data_only=True)
             except Exception as e:
-                st.error(f"정산서 ZIP 다운로드 작업 중 오류: {e}")
+                st.error(f"엑셀 파일을 읽는 중 오류가 발생했습니다: {e}")
+                return
 
-        # 두 번째 버튼: 세부매출내역만 다운로드
-        if st.button("세부매출내역 탭만 ZIP 다운로드"):
-            creds_b = get_credentials_from_secrets("B")
-            sheet_svc_b = build("sheets", "v4", credentials=creds_b)
+            # 2) 각 워크시트를 새 워크북으로 만들어 ZIP에 저장
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for sheet in wb.worksheets:
+                    # 새 Workbook 생성
+                    new_wb = Workbook()
+                    new_ws = new_wb.active
+                    new_ws.title = sheet.title
 
-            progress_placeholder = st.empty()
-            progress_bar = progress_placeholder.progress(0.0)
-            info_placeholder = st.empty()
+                    # 원본 시트 내용을 행단위로 복사
+                    for row in sheet.iter_rows(values_only=True):
+                        new_ws.append(row)
 
-            info_placeholder.info("세부매출내역 탭 다운로드 중...")
+                    # 새 워크북을 바이너리로 저장
+                    single_buf = io.BytesIO()
+                    new_wb.save(single_buf)
+                    single_buf.seek(0)
 
-            try:
-                zip_data_detail = download_selected_tabs_as_zip(
-                    spreadsheet_id=out_file_id,
-                    creds=creds_b,
-                    sheet_svc=sheet_svc_b,
-                    tab_keyword="(세부매출내역)",
-                    progress_bar=progress_bar
-                )
-                progress_placeholder.progress(1.0)
-                info_placeholder.success("세부매출내역 탭 다운로드 / 압축 완료!")
-                time.sleep(1)
-                info_placeholder.empty()
+                    # ZIP 내에 "시트이름.xlsx" 형태로 추가
+                    safe_sheet_name = sheet.title.replace("/", "_").replace("\\", "_")
+                    zf.writestr(f"{safe_sheet_name}.xlsx", single_buf.getvalue())
 
-                st.download_button(
-                    label="세부매출내역.zip 다운로드",
-                    data=zip_data_detail,
-                    file_name="세부매출내역.zip",
-                    mime="application/zip"
-                )
+            zip_buf.seek(0)
 
-            except Exception as e:
-                st.error(f"세부매출내역 ZIP 다운로드 작업 중 오류: {e}")
-
+            st.success("모든 시트를 개별 엑셀 파일로 분할 완료!")
+            st.download_button(
+                label="ZIP 다운로드",
+                data=zip_buf.getvalue(),
+                file_name="split_sheets.zip",
+                mime="application/zip"
+            )
     else:
-        st.info("정산 보고서 생성이 완료된 후, 압축파일 다운로드를 진행할 수 있습니다.")
-
-
-# ----------------------------------------------------------------------------
-# (새로운 함수) 특정 키워드를 포함한 탭만 골라서 다운로드
-# ----------------------------------------------------------------------------
-def download_selected_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, tab_keyword: str, progress_bar=None) -> bytes:
-    """
-    tab_keyword에 해당하는 탭(ex. '(정산서)' or '(세부매출내역)')만 다운로드/압축
-    """
-    from google.auth.transport.requests import AuthorizedSession
-    session = AuthorizedSession(creds)
-
-    def get_sheet_list(spreadsheet_id):
-        meta = sheet_svc.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
-        all_sheets = meta["sheets"]
-
-        sheet_list = []
-        for s in all_sheets:
-            props = s["properties"]
-            sid = props["sheetId"]
-            title = props["title"]
-            stype = props.get("sheetType", "GRID")
-
-            # 만약 'GRID' 타입이 아니거나, sheetId=0 인 것은 스킵
-            if stype != "GRID" or sid == 0:
-                continue
-
-            # 탭 이름에 tab_keyword가 들어있는지 판별
-            if tab_keyword in title:
-                sheet_list.append((sid, title))
-
-        return sheet_list
-
-    def download_sheet_as_xlsx(spreadsheet_id, sheet_id, session, max_retries=3):
-        url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
-        params = {"format": "xlsx", "gid": str(sheet_id)}
-
-        for attempt in range(max_retries):
-            time.sleep(1)  # 시도마다 잠깐 쉼
-            try:
-                resp = session.get(url, params=params)
-                resp.raise_for_status()
-                return resp.content
-            except req.exceptions.HTTPError as e:
-                if e.response.status_code in [429, 500, 503]:
-                    time.sleep(2**attempt)
-                    continue
-                elif e.response.status_code in [403, 404]:
-                    time.sleep(1)
-                    continue
-                else:
-                    raise e
-        
-        # 여기까지 왔다는 것은 max_retries 번 모두 실패한 것
-        print(f"[WARN] Failed to download tab gid={sheet_id} after {max_retries} attempts. Skipping this tab.")
-        return None
-
-    # 1) 해당 keyword가 들어간 탭 목록만 필터링
-    tabs = get_sheet_list(spreadsheet_id)
-    total = len(tabs)
-
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for i, (gid, title) in enumerate(tabs):
-            content = download_sheet_as_xlsx(spreadsheet_id, gid, session)
-            zf.writestr(f"{title}.xlsx", content)
-
-            # (B) 탭 하나 완료 후 약간 쉼
-            time.sleep(1)
-
-            # (C) 진행률 갱신 (if progress_bar is not None)
-            if progress_bar is not None and total > 0:
-                ratio = (i + 1) / total
-                progress_bar.progress(ratio)
-
-    zip_buffer.seek(0)
-    return zip_buffer.getvalue()
+        st.info("정산 보고서가 먼저 생성된 뒤에, 엑셀을 업로드할 수 있습니다.")
 
 
 # ----------------------------------------------------------------
@@ -2288,7 +2186,7 @@ def main():
     st.divider()
 
     # 4) 섹션 3: 압축파일 다운로드
-    section_three_download_zip()
+    section_three_upload_and_split_excel()
 
 if __name__ == "__main__":
     main()
