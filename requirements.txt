@@ -6,3 +6,4 @@ google-auth-httplib2
 google-api-python-client
 gspread-formatting
 requests
+openpyxl
