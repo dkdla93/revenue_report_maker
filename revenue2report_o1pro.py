@@ -306,8 +306,25 @@ def show_detailed_verification():
                 else:
                     return ""
 
+            # ▼ 여기에서 원하는 숫자 컬럼들만 정수로 보이게 format 설정
+            #   예: ["원본_곡비", "정산서_곡비", "원본_공제금액", "정산서_공제금액", ...]
+            #   실제 칼럼명은 코드 상황에 맞춰 지정하세요.
+            int_columns = [
+                "원본_곡비", "정산서_곡비",
+                "원본_공제금액", "정산서_공제금액",
+                "원본_공제후잔액", "정산서_공제후잔액",
+                "원본_정산율(%)", "정산서_정산율(%)"
+                # 필요하다면 더 추가
+            ]
+
+            # style.format에 {칼럼명: 포맷} 형태의 딕셔너리를 넘기면 각 칼럼별로 적용 가능
+            # "{:.0f}" → 소수점 0자리, 즉 정수로 반올림 표시
+            format_dict = {col: "{:.0f}" for col in int_columns if col in df.columns}
+
             st.dataframe(
-                df.style.applymap(highlight_boolean, subset=bool_cols)
+                df.style
+                  .format(format_dict)                     # 숫자 칼럼을 정수로 표시
+                  .applymap(highlight_boolean, subset=bool_cols)  # True/False 색상
             )
 
     # 세부매출 검증
@@ -329,8 +346,15 @@ def show_detailed_verification():
                 else:
                     return ""
 
+            # 예: "원본_매출액", "정산서_매출액" 같은 칼럼이 있다면 정수로 표시
+            int_columns = ["원본_매출액", "정산서_매출액"]  # 실제 코드 상황에 맞춰 수정
+
+            format_dict = {col: "{:.0f}" for col in int_columns if col in df.columns}
+
             st.dataframe(
-                df.style.applymap(highlight_boolean, subset=bool_cols)
+                df.style
+                  .format(format_dict)
+                  .applymap(highlight_boolean, subset=bool_cols)
             )
 
 
