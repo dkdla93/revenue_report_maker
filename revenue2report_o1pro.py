@@ -175,9 +175,6 @@ def section_three_download_zip():
             st.warning("report_file_id가 없습니다.")
             return
 
-
-
-
         # 첫 번째 버튼: 정산서만 다운로드
         if st.button("정산서 탭만 ZIP 다운로드"):
             creds_b = get_credentials_from_secrets("B")
@@ -281,7 +278,7 @@ def download_selected_tabs_as_zip(spreadsheet_id: str, creds, sheet_svc, tab_key
 
         return sheet_list
 
-    def download_sheet_as_xlsx(spreadsheet_id, sheet_id, session, max_retries=5):
+    def download_sheet_as_xlsx(spreadsheet_id, sheet_id, session, max_retries=3):
         url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
         params = {"format": "xlsx", "gid": str(sheet_id)}
 
