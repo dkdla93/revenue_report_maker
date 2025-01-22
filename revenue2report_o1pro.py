@@ -164,54 +164,59 @@ def section_two_sheet_link_and_verification():
 
 def section_three_upload_and_split_excel():
     """
-    3번 섹션 (새로운 버전):
-    - 사용자가 구글시트(정산 보고서 파일)에서 [파일→다운로드→Microsoft Excel]로 받은 xlsx를
-      여기 업로드하면, 시트별로 분할하여 ZIP으로 묶어 다운로드.
+    3) '엑셀(.xlsx)' 파일 업로드 후, 시트별로 분할 & ZIP 다운로드
+    (시트 내 서식/병합/스타일도 그대로 유지하는 방법)
     """
     if "report_done" in st.session_state and st.session_state["report_done"]:
-        st.subheader("3) '엑셀(.xlsx)' 파일 업로드 후, 시트별 파일 분할 / ZIP 다운로드")
+        st.subheader("3) '엑셀(.xlsx)' 파일 업로드 후, 시트별로 분할 / ZIP 다운로드 (서식 유지)")
 
         st.write("""
-        1. 위의 "보고서 링크"로 이동해 시트를 열어주세요.  
-        2. 구글시트 메뉴에서 "**파일 → 다운로드 → Microsoft Excel (.xlsx)**" 로 저장하세요.  
-        3. 아래 업로드 버튼에 그 **엑셀 파일**을 올려주세요.  
-        4. 그러면 시트별로 분할 & 압축하여 다운로드할 수 있습니다.
+        **사용 순서**  
+        1. 생성된 구글시트(보고서)에서 "**파일 → 다운로드 → Microsoft Excel (.xlsx)**"로 다운로드  
+        2. 아래 업로드 버튼으로 방금 받은 .xlsx 파일을 업로드  
+        3. 시트별로 분할된 XLSX 파일들을 ZIP으로 묶어 다운로드
         """)
 
         uploaded_file = st.file_uploader("엑셀 파일 업로드", type=["xlsx"])
         if uploaded_file is not None:
-            # 1) openpyxl로 파일 로드
+            # 1) 업로드된 엑셀파일 전체를 BytesIO로 보관
+            original_file_data = uploaded_file.read()
+
+            # 2) 한번 로드해서 시트명 리스트(순서 등) 파악
             try:
-                wb = openpyxl.load_workbook(uploaded_file, data_only=True)
+                # 여기서 한 번만 load_workbook
+                wb = openpyxl.load_workbook(io.BytesIO(original_file_data))
             except Exception as e:
                 st.error(f"엑셀 파일을 읽는 중 오류가 발생했습니다: {e}")
                 return
 
-            # 2) 각 워크시트를 새 워크북으로 만들어 ZIP에 저장
+            # 3) ZIP 버퍼 준비
             zip_buf = io.BytesIO()
             with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-                for sheet in wb.worksheets:
-                    # 새 Workbook 생성
-                    new_wb = Workbook()
-                    new_ws = new_wb.active
-                    new_ws.title = sheet.title
+                # 원본 엑셀 파일에 들어있는 모든 시트명 반복
+                for sheet_name in wb.sheetnames:
+                    # (a) Workbook을 다시 로드 (서식 보존 목적)
+                    temp_wb = openpyxl.load_workbook(io.BytesIO(original_file_data))
 
-                    # 원본 시트 내용을 행단위로 복사
-                    for row in sheet.iter_rows(values_only=True):
-                        new_ws.append(row)
+                    # (b) 이 시트(`sheet_name`)를 제외한 나머지 시트는 모두 삭제
+                    for s in temp_wb.sheetnames:
+                        if s != sheet_name:
+                            ws_remove = temp_wb[s]
+                            temp_wb.remove(ws_remove)
 
-                    # 새 워크북을 바이너리로 저장
+                    # (c) 이제 temp_wb에는 sheet_name 시트만 남아있음
                     single_buf = io.BytesIO()
-                    new_wb.save(single_buf)
+                    temp_wb.save(single_buf)
                     single_buf.seek(0)
 
-                    # ZIP 내에 "시트이름.xlsx" 형태로 추가
-                    safe_sheet_name = sheet.title.replace("/", "_").replace("\\", "_")
+                    # 시트 이름에 '/', '\\' 등이 있으면 zip 내부에서 문제될 수 있으므로 치환
+                    safe_sheet_name = sheet_name.replace("/", "_").replace("\\", "_")
+                    # (d) zip에 추가
                     zf.writestr(f"{safe_sheet_name}.xlsx", single_buf.getvalue())
 
             zip_buf.seek(0)
 
-            st.success("모든 시트를 개별 엑셀 파일로 분할 완료!")
+            st.success("모든 시트를 개별 엑셀 파일로 분할 완료! (서식/병합 유지됨)")
             st.download_button(
                 label="ZIP 다운로드",
                 data=zip_buf.getvalue(),
@@ -220,6 +225,7 @@ def section_three_upload_and_split_excel():
             )
     else:
         st.info("정산 보고서가 먼저 생성된 뒤에, 엑셀을 업로드할 수 있습니다.")
+
 
 
 # ----------------------------------------------------------------
