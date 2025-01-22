@@ -275,7 +275,6 @@ def section_three_upload_and_split_excel():
 # ----------------------------------------------------------------
 
 def show_detailed_verification():
-    st.write("### 세부 검증 내용")
 
     check_dict = st.session_state.get("check_dict", {})
     dv = check_dict.get("details_verification", {})
@@ -735,14 +734,6 @@ def generate_report(
                 f"{year_val}년 {month_val}월",
                 to_currency(rv)
             ])
-            row_sales = {
-                "아티스트": artist,
-                "앨범명": d["album"],
-                "원본_매출": rv,
-                "계산_매출": rv,  # 임시로 동일
-                "match_매출": True
-            }
-            check_dict["details_verification"]["세부매출"].append(row_sales)
         detail_matrix.append(["합계","","","","","", to_currency(total_det)])
         row_cursor_detail_end = len(detail_matrix)
 
@@ -1110,38 +1101,69 @@ def generate_report(
         # ---------------------------------------------------------
         # 계산된 값들 -> check_dict 에 저장
         # ---------------------------------------------------------
-        # (예시) 잔액 검증
-        is_remain_match = abs((prev_val - deduct_val) - remain_val) < 1e-3
-        if not is_remain_match:
+        # (A) 1번 음원 서비스별 매출 검증
+        for d in details_sorted:
+            album_service = (d["album"], d["service"])
+            original_val = d["revenue"]   # 원본
+            # 정산서 쪽도 사실상 d["revenue"]를 사용했으므로:
+            report_val = d["revenue"]
+            is_match = almost_equal(original_val, report_val)
+            if not is_match:
+                check_dict["verification_summary"]["total_errors"] += 1
+                check_dict["verification_summary"]["artist_error_list"].append(artist)
+
+            row_report_item = {
+                "아티스트": artist,
+                "구분": "음원서비스별매출",
+                "앨범": d["album"],
+                "서비스명": d["service"],
+                "원본_매출액": original_val,
+                "정산서_매출액": report_val,
+                "match_매출액": is_match,
+            }
+            check_dict["details_verification"]["세부매출"].append(row_report_item)
+
+        # (B) 3번 공제 내역 검증 (곡비/공제금액/공제 후 남은 곡비)
+        is_match_prev   = almost_equal(prev_val,  artist_cost_dict[artist]["전월잔액"])
+        is_match_deduct = almost_equal(deduct_val,artist_cost_dict[artist]["당월차감액"])
+        is_match_remain = almost_equal(remain_val,artist_cost_dict[artist]["당월잔액"])
+        if not (is_match_prev and is_match_deduct and is_match_remain):
             check_dict["verification_summary"]["total_errors"] += 1
             check_dict["verification_summary"]["artist_error_list"].append(artist)
 
-        row_report = {
+        row_report_item_3 = {
             "아티스트": artist,
+            "구분": "공제내역",
+            "원본_곡비": artist_cost_dict[artist]["전월잔액"],
+            "정산서_곡비": prev_val,
+            "match_곡비": is_match_prev,
 
-            # 전월잔액
-            "원본_전월잔액": prev_val,
-            "계산_전월잔액": prev_val,  # 사실상 같다고 가정
-            "match_전월잔액": True,      # 항상 일치한다고 가정
+            "원본_공제금액": artist_cost_dict[artist]["당월차감액"],
+            "정산서_공제금액": deduct_val,
+            "match_공제금액": is_match_deduct,
 
-            # 당월차감액
-            "원본_당월차감": deduct_val,
-            "계산_당월차감": deduct_val,
-            "match_당월차감": True,
-
-            # 당월잔액
-            "원본_잔액": remain_val,
-            "계산_잔액": (prev_val - deduct_val),
-            "match_잔액": is_remain_match,
-
-            # 최종정산금액
-            "정산요율(%)": rate_val,
+            "원본_공제후잔액": artist_cost_dict[artist]["당월잔액"],
+            "정산서_공제후잔액": remain_val,
+            "match_공제후잔액": is_match_remain,
         }
-        check_dict["details_verification"]["정산서"].append(row_report)
+        check_dict["details_verification"]["정산서"].append(row_report_item_3)
 
+        # (C) 4번 수익 배분율 검증
+        original_rate = artist_cost_dict[artist]["정산요율"]
+        report_rate   = rate_val   # 위에서 사용한 rate_val
+        is_rate_match = almost_equal(original_rate, report_rate)
+        if not is_rate_match:
+            check_dict["verification_summary"]["total_errors"] += 1
+            check_dict["verification_summary"]["artist_error_list"].append(artist)
 
-
-
+        row_report_item_4 = {
+            "아티스트": artist,
+            "구분": "수익배분율",
+            "원본_정산율(%)": original_rate,
+            "정산서_정산율(%)": report_rate,
+            "match_정산율": is_rate_match,
+        }
+        check_dict["details_verification"]["정산서"].append(row_report_item_4)
 
 
         time.sleep(3)   
