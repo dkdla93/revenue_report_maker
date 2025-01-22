@@ -205,7 +205,9 @@ def section_three_upload_and_split_excel():
         uploaded_file = st.file_uploader("엑셀 파일 업로드", type=["xlsx"])
 
         if uploaded_file is not None:
-            st.write("엑셀파일 ZIP 작업이 곧 진행됩니다.")
+            # (C) 진행률 표시용
+            progress_bar = st.progress(0.0)
+            progress_text = st.empty()
 
             # A) 업로드된 엑셀파일 전체를 BytesIO로 보관
             original_file_data = uploaded_file.read()
@@ -223,10 +225,6 @@ def section_three_upload_and_split_excel():
             if total_sheets == 0:
                 st.warning("업로드된 엑셀 파일에 시트가 없습니다.")
                 return
-
-            # (C) 진행률 표시용
-            progress_bar = st.progress(0.0)
-            progress_text = st.empty()
 
             # (D) ZIP 버퍼 준비
             zip_buf = io.BytesIO()
