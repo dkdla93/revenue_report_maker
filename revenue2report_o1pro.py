@@ -266,10 +266,6 @@ def section_one_report_input():
     """
     st.subheader("1) 정산 보고서 정보 입력 항목")
 
-    # (A) 진행률 바 / 현재 처리중 아티스트 표시용 placeholder
-    progress_bar = st.empty()
-    artist_placeholder = st.empty()
-
     # session_state에서 기본값 불러오기 (없으면 "")
     default_ym = st.session_state.get("ym", "")
     default_report_date = st.session_state.get("report_date", "")
@@ -277,6 +273,10 @@ def section_one_report_input():
     # 1. 입력 필드
     ym = st.text_input("진행기간(YYYYMM)", default_ym)
     report_date = st.text_input("보고서 발행 날짜 (YYYY-MM-DD)", default_report_date)
+
+    # (A) 진행률 바 / 현재 처리중 아티스트 표시용 placeholder
+    progress_bar = st.empty()
+    artist_placeholder = st.empty()
 
     # 2. 생성 버튼
     if st.button("정산 보고서 생성 시작"):
@@ -1250,11 +1250,11 @@ def generate_report(
         report_matrix[5][1] = f"{artist}님 음원 정산 내역서"
 
         report_matrix[7][0] = "•"
-        report_matrix[7][1] = "저희와 함께해 주셔서 감사합니다!"
+        report_matrix[7][1] = "저희와 함께해 주셔서 정말 감사하고 앞으로도 잘 부탁드리겠습니다!"
         report_matrix[8][0] = "•"
-        report_matrix[8][1] = f"{year_val}년 {month_val}월 음원의 수익을 아래와 같이 정산드립니다."
+        report_matrix[8][1] = f"{year_val}년 {month_val}월 음원의 수익을 아래와 같이 정산드리오니 참고 부탁드립니다."
         report_matrix[9][0] = "•"
-        report_matrix[9][1] = "정산 문의사항은 언제든 편히 메일 주세요!"
+        report_matrix[9][1] = "정산 관련하여 문의사항이 있다면 무엇이든, 언제든 편히 메일 주세요!"
         report_matrix[9][5] = "E-Mail : lucasdh3013@naver.com"
 
         # -----------------------------------------------------------------
@@ -1279,7 +1279,6 @@ def generate_report(
             report_matrix[row_cursor][6] = to_currency(rv)
             row_cursor += 1
 
-        row_cursor += 1
         # 합계
         report_matrix[row_cursor][1] = "합계"
         report_matrix[row_cursor][6] = to_currency(sum_1)
@@ -1305,7 +1304,6 @@ def generate_report(
             report_matrix[row_cursor][6] = to_currency(amt)
             row_cursor += 1
 
-        row_cursor += 1
         report_matrix[row_cursor][1] = "합계"
         report_matrix[row_cursor][6] = to_currency(sum_2)
         row_cursor_sum2 = row_cursor
@@ -2064,8 +2062,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_album-1,
-                    "endRowIndex": row_cursor_album,
+                    "startRowIndex": row_cursor_album-2,
+                    "endRowIndex": row_cursor_album-1,
                     "startColumnIndex": 1, 
                     "endColumnIndex": 2    
                 },
@@ -2086,8 +2084,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_album,
-                    "endRowIndex": row_cursor_album+1,
+                    "startRowIndex": row_cursor_album-1,
+                    "endRowIndex": row_cursor_album,
                     "startColumnIndex": 1,
                     "endColumnIndex": 7
                 },
@@ -2111,8 +2109,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_album+1,
-                    "endRowIndex": row_cursor_sum2-1,
+                    "startRowIndex": row_cursor_album,
+                    "endRowIndex": row_cursor_sum2-2,
                     "startColumnIndex": 1,
                     "endColumnIndex": 7
                 },
@@ -2135,8 +2133,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum2-1,
-                    "endRowIndex": row_cursor_sum2,
+                    "startRowIndex": row_cursor_sum2-3,
+                    "endRowIndex": row_cursor_sum2-2,
                     "startColumnIndex": 1,
                     "endColumnIndex": 7
                 },
@@ -2159,8 +2157,8 @@ def generate_report(
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum2-1,
-                    "endRowIndex": row_cursor_sum2,
+                    "startRowIndex": row_cursor_sum2-3,
+                    "endRowIndex": row_cursor_sum2-2,
                     "startColumnIndex": 1,
                     "endColumnIndex": 6
                 },
@@ -2171,8 +2169,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum2-1,
-                    "endRowIndex": row_cursor_sum2,
+                    "startRowIndex": row_cursor_sum2-3,
+                    "endRowIndex": row_cursor_sum2-2,
                     "startColumnIndex": 1,
                     "endColumnIndex": 6
                 },
@@ -2195,8 +2193,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum2-1,
-                    "endRowIndex": row_cursor_sum2,
+                    "startRowIndex": row_cursor_sum2-3,
+                    "endRowIndex": row_cursor_sum2-2,
                     "startColumnIndex": 6,
                     "endColumnIndex": 7
                 },
@@ -2222,8 +2220,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_deduction-1,  # (4-1)
-                    "endRowIndex": row_cursor_deduction,
+                    "startRowIndex": row_cursor_deduction-2,  # (4-1)
+                    "endRowIndex": row_cursor_deduction-1,
                     "startColumnIndex": 1,  # (B=1)
                     "endColumnIndex": 2     # (E=4 => endIndex=5)
                 },
@@ -2244,8 +2242,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_deduction,
-                    "endRowIndex": row_cursor_deduction+1,
+                    "startRowIndex": row_cursor_deduction-1,
+                    "endRowIndex": row_cursor_deduction,
                     "startColumnIndex": 1,
                     "endColumnIndex": 7
                 },
@@ -2269,8 +2267,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_deduction+1,
-                    "endRowIndex": row_cursor_deduction+2,
+                    "startRowIndex": row_cursor_deduction,
+                    "endRowIndex": row_cursor_deduction+1,
                     "startColumnIndex": 1,
                     "endColumnIndex": 6
                 },
@@ -2293,8 +2291,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_deduction+1,
-                    "endRowIndex": row_cursor_deduction+2,
+                    "startRowIndex": row_cursor_deduction,
+                    "endRowIndex": row_cursor_deduction+1,
                     "startColumnIndex": 6,
                     "endColumnIndex": 7
                 },
@@ -2319,8 +2317,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_rate-1,
-                    "endRowIndex": row_cursor_rate,
+                    "startRowIndex": row_cursor_rate-2,
+                    "endRowIndex": row_cursor_rate-1,
                     "startColumnIndex": 1,  
                     "endColumnIndex": 2    
                 },
@@ -2341,8 +2339,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_rate,
-                    "endRowIndex": row_cursor_rate+1,
+                    "startRowIndex": row_cursor_rate-1,
+                    "endRowIndex": row_cursor_rate,
                     "startColumnIndex": 1,
                     "endColumnIndex": 7
                 },
@@ -2366,8 +2364,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_rate+1,
-                    "endRowIndex": row_cursor_rate+2,
+                    "startRowIndex": row_cursor_rate,
+                    "endRowIndex": row_cursor_rate+1,
                     "startColumnIndex": 1,
                     "endColumnIndex": 7
                 },
@@ -2390,8 +2388,8 @@ def generate_report(
             "mergeCells": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum4,
-                    "endRowIndex": row_cursor_sum4+1,
+                    "startRowIndex": row_cursor_sum4-1,
+                    "endRowIndex": row_cursor_sum4,
                     "startColumnIndex": 1,
                     "endColumnIndex": 6
                 },
@@ -2402,8 +2400,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum4,
-                    "endRowIndex": row_cursor_sum4+1,
+                    "startRowIndex": row_cursor_sum4-1,
+                    "endRowIndex": row_cursor_sum4,
                     "startColumnIndex": 1,
                     "endColumnIndex": 6
                 },
@@ -2426,8 +2424,8 @@ def generate_report(
             "repeatCell": {
                 "range": {
                     "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum4,
-                    "endRowIndex": row_cursor_sum4+1,
+                    "startRowIndex": row_cursor_sum4-1,
+                    "endRowIndex": row_cursor_sum4,
                     "startColumnIndex": 6,
                     "endColumnIndex": 7
                 },
@@ -2454,7 +2452,7 @@ def generate_report(
                 "range": {
                     "sheetId": ws_report_id,
                     "startRowIndex": 0,
-                    "endRowIndex": row_cursor_report_end,
+                    "endRowIndex": row_cursor_report_end-1,
                     "startColumnIndex": 0,
                     "endColumnIndex": 8
                 },
@@ -2491,11 +2489,11 @@ def generate_report(
         # 1번 섹션 A14:G30 => row=13..30, col=0..7
         add_dotted_borders(13, row_cursor_sum1, 1, 7)
         # 2번 섹션 
-        add_dotted_borders(row_cursor_album, row_cursor_sum2, 1, 7)
+        add_dotted_borders(row_cursor_album-1, row_cursor_sum2-1, 1, 7)
         # 3번 섹션 
-        add_dotted_borders(row_cursor_deduction, row_cursor_sum3, 1, 7)
+        add_dotted_borders(row_cursor_deduction-1, row_cursor_sum3-1, 1, 7)
         # 4번 섹션 
-        add_dotted_borders(row_cursor_rate, row_cursor_sum4+1, 1, 7)
+        add_dotted_borders(row_cursor_rate-1, row_cursor_sum4, 1, 7)
         
 
         # (P) 시트 외곽 검정 SOLID 
@@ -2504,7 +2502,7 @@ def generate_report(
                 "range": {
                     "sheetId": ws_report_id,
                     "startRowIndex": 0,
-                    "endRowIndex": row_cursor_report_end,
+                    "endRowIndex": row_cursor_report_end-1,
                     "startColumnIndex": 0,
                     "endColumnIndex": 8
                 },
