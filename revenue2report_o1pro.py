@@ -53,6 +53,194 @@ def get_credentials_from_secrets(which: str = "A") -> Credentials:
     return credentials
 
 
+
+# ----------------------------------------------------------------
+# (신규) [0] 맨 앞단에 "곡비 파일 수정" 섹션 추가
+# ----------------------------------------------------------------
+
+def section_zero_prepare_song_cost():
+    """
+    0) 곡비 파일 수정(제작) 섹션 (맨 앞단)
+    - 이번 진행기간(YYYYMM) 입력받아,
+    - input_online revenue의 해당 달 탭(매출),
+      input_song cost의 직전 달 탭(당월잔액) & 이번 달 탭에 대해
+      '당월 발생액'은 공란, '당월 차감액'은 min(매출합, 전월+당월발생액)으로 업데이트,
+      '당월 잔액' 컬럼의 수식 유지 (직접 값 기입 X)
+    """
+    st.subheader("0) 곡비 파일 수정 (가장 먼저 실행)")
+
+    default_ym = st.session_state.get("ym", "")
+    new_ym = st.text_input("진행기간(YYYYMM) - (곡비 파일 수정용)", default_ym)
+
+    if st.button("곡비 파일 수정하기"):
+        # A 계정 인증
+        creds_a = get_credentials_from_secrets("A")
+        gc_a = gspread.authorize(creds_a)
+
+        # 1) 유효성 체크
+        if not re.match(r'^\d{6}$', new_ym):
+            st.error("진행기간은 YYYYMM 6자리로 입력해야 합니다.")
+            return
+
+        # session_state에 저장 (아래 단계에서 재사용할 수 있도록)
+        st.session_state["ym"] = new_ym
+
+        # 2) 직전 달(YYYYMM) 계산
+        prev_ym = get_prev_month_str(new_ym)  # 밑에서 정의할 헬퍼
+
+        try:
+            # (A) input_song cost 열기
+            song_cost_sh = gc_a.open("input_song cost")
+        except gspread.exceptions.SpreadsheetNotFound:
+            st.error("Google Sheet 'input_song cost'를 찾을 수 없습니다.")
+            return
+
+        try:
+            # (B) input_online revenue 열기
+            revenue_sh = gc_a.open("input_online revenue")
+        except gspread.exceptions.SpreadsheetNotFound:
+            st.error("Google Sheet 'input_online revenue'를 찾을 수 없습니다.")
+            return
+
+        # ---- (1) 직전달 탭에서 '아티스트별 당월 잔액' 읽기 ----
+        ws_map_sc = {ws.title: ws for ws in song_cost_sh.worksheets()}
+        if prev_ym not in ws_map_sc:
+            st.error(f"input_song cost에 직전 달 '{prev_ym}' 탭이 없습니다.")
+            return
+        ws_prev = ws_map_sc[prev_ym]
+        data_prev = ws_prev.get_all_values()
+        if not data_prev:
+            st.error(f"'{prev_ym}' 탭이 비어있습니다.")
+            return
+
+        header_prev = data_prev[0]
+        body_prev   = data_prev[1:]
+        try:
+            idx_artist_p = header_prev.index("아티스트명")
+            idx_remain_p = header_prev.index("당월 잔액")
+        except ValueError as e:
+            st.error(f"직전 달 시트에 '아티스트명' 또는 '당월 잔액' 칼럼이 없습니다: {e}")
+            return
+
+        prev_remain_dict = {}
+        for row in body_prev:
+            artist = row[idx_artist_p].strip()
+            if not artist or artist in ("합계", "총계"):
+                continue
+            try:
+                val = float(row[idx_remain_p].replace(",", ""))
+            except:
+                val = 0.0
+            prev_remain_dict[artist] = val
+
+        # ---- (2) 이번 달 탭에서 '아티스트명' / '정산 요율' / '전월 잔액' 등 읽기 ----
+        if new_ym not in ws_map_sc:
+            # 만약 이번 달 탭이 없으면, 직전 달 탭을 복제해서 만들 수도 있음
+            # (요청 사항에 따라 처리. 여기서는 "없으면 에러" 예시, 필요시 duplicate_worksheet_with_new_name 활용)
+            st.error(f"이번 달 '{new_ym}' 탭이 없어서 작업할 수 없습니다. (필요시 복제 로직 추가)")
+            return
+
+        ws_new = ws_map_sc[new_ym]
+        data_new = ws_new.get_all_values()
+        if not data_new:
+            st.error(f"'{new_ym}' 탭이 비어있습니다.")
+            return
+        header_new = data_new[0]
+        body_new   = data_new[1:]
+
+        # 칼럼 인덱스 찾기
+        try:
+            idx_artist_n = header_new.index("아티스트명")
+            idx_rate_n   = header_new.index("정산 요율")
+            idx_prev_n   = header_new.index("전월 잔액")
+            idx_curr_n   = header_new.index("당월 발생액")
+            idx_ded_n    = header_new.index("당월 차감액")
+            idx_remain_n = header_new.index("당월 잔액")
+        except ValueError as e:
+            st.error(f"[input_song cost-{new_ym}] 시트 칼럼 확인 필요: {e}")
+            return
+
+        # ---- (3) 이번 달의 매출합 (input_online revenue) ----
+        ws_map_or = {ws.title: ws for ws in revenue_sh.worksheets()}
+        if new_ym not in ws_map_or:
+            st.error(f"input_online revenue에 '{new_ym}' 탭이 없습니다.")
+            return
+        ws_rev = ws_map_or[new_ym]
+        data_rev = ws_rev.get_all_values()
+        if not data_rev:
+            st.error(f"{new_ym} 탭(매출)이 비어있습니다.")
+            return
+
+        header_rev = data_rev[0]
+        body_rev   = data_rev[1:]
+
+        try:
+            col_artist_rev = header_rev.index("앨범아티스트")
+            col_revenue    = header_rev.index("권리사정산금액")
+        except ValueError as e:
+            st.error(f"[input_online revenue-{new_ym}] 시트에 '앨범아티스트' 또는 '권리사정산금액' 칼럼이 없습니다: {e}")
+            return
+
+        # 아티스트별 매출 합산
+        sum_revenue_dict = defaultdict(float)
+        for row in body_rev:
+            a = row[col_artist_rev].strip()
+            if not a: 
+                continue
+            try:
+                rv_val = float(row[col_revenue].replace(",", ""))
+            except:
+                rv_val = 0.0
+            sum_revenue_dict[a] += rv_val
+
+        # ---- (4) 이번 달 탭 body_new 업데이트 ----
+        updated_rows = []
+        for row in body_new:
+            row_data = row[:]  # 복사
+            artist_n = row_data[idx_artist_n].strip()
+            if not artist_n or artist_n in ("합계", "총계"):
+                updated_rows.append(row_data)
+                continue
+
+            # 전월 잔액 = prev_remain_dict에서 가져오기 (없으면 0)
+            old_prev_val = prev_remain_dict.get(artist_n, 0.0)
+            row_data[idx_prev_n] = str(old_prev_val)
+
+            # 당월 발생액 = 공란
+            row_data[idx_curr_n] = ""
+
+            # 당월 차감액 = min(매출합, 전월잔액+당월발생액)
+            #   단, 현재는 "당월발생액"=0으로 간주(=공란)
+            #   => effectively: min(매출합, 전월잔액)
+            rev_sum = sum_revenue_dict.get(artist_n, 0.0)
+            # 전월 + 당월발생액(0)
+            can_deduct_max = old_prev_val  # (전월잔액)
+            actual_deduct = rev_sum
+            if rev_sum > can_deduct_max:
+                actual_deduct = can_deduct_max
+            row_data[idx_ded_n] = str(actual_deduct)
+
+            # '당월 잔액'은 수식이 걸려있으므로 직접 쓰지 않고 그대로 두기
+            # row_data[idx_remain_n] = (some formula) -> 유지
+
+            updated_rows.append(row_data)
+
+        # ---- (5) 시트에 bulk update ----
+        if updated_rows:
+            rng_start = "A2"  # 헤더가 1행이므로, 2행부터
+            ws_new.update(
+                range_name=rng_start,
+                values=updated_rows,
+                value_input_option="USER_ENTERED"
+            )
+
+        st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
+        st.session_state["song_cost_prepared"] = True
+
+
+
+
+
 # ----------------------------------------------------------------
 # 웹 UI 섹션1~3 부분
 # ----------------------------------------------------------------
@@ -101,7 +289,7 @@ def section_one_report_input():
             "artist_compare_result": {}
         }
 
-        # 실제 generate_report(...) 호출 (A계정으로)
+        # 보고서 생성
         out_file_id = generate_report(
             ym, report_date, check_dict,
             gc=gc_a, 
@@ -110,6 +298,7 @@ def section_one_report_input():
             progress_bar=progress_bar,
             artist_placeholder=artist_placeholder
         )
+
         st.session_state["report_done"] = True
         st.session_state["report_file_id"] = out_file_id
         st.success(f"보고서 생성 완료! file_id={out_file_id}")
@@ -189,8 +378,7 @@ def section_two_sheet_link_and_verification():
 
 def section_three_upload_and_split_excel():
     """
-    3) '엑셀(.xlsx)' 파일 업로드 후, 시트별로 분할 & ZIP 다운로드
-    (시트 내 서식/병합/스타일도 그대로 유지하는 방법)
+    3) '엑셀(.xlsx)' 파일 업로드 후, 시트별로 분할 & ZIP 다운로드 (서식 유지)
     """
     if "report_done" in st.session_state and st.session_state["report_done"]:
         st.subheader("3) '엑셀(.xlsx)' 파일 업로드 후, 시트별로 분할 / ZIP 다운로드 (서식 유지)")
@@ -214,7 +402,6 @@ def section_three_upload_and_split_excel():
 
             # B) 한번 로드해서 시트명 리스트(순서 등) 파악
             try:
-                # 여기서 한 번만 load_workbook
                 wb = openpyxl.load_workbook(io.BytesIO(original_file_data))
             except Exception as e:
                 st.error(f"엑셀 파일을 읽는 중 오류가 발생했습니다: {e}")
@@ -229,19 +416,17 @@ def section_three_upload_and_split_excel():
             # (D) ZIP 버퍼 준비
             zip_buf = io.BytesIO()
             with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-                # 시트별 분할
                 for i, sheet_name in enumerate(sheet_names):
                     # 진행률 계산
                     ratio = (i + 1) / total_sheets
                     percent = int(ratio * 100)
 
-                    # 진행 상황 표시 (X% - 현재 처리중인 시트명)
+                    # 진행 상황 표시
                     progress_bar.progress(ratio)
                     progress_text.info(f"{percent}% 완료 - 시트 '{sheet_name}' 처리 중...")
 
-                    # (1) 다시 로드해서 시트만 남기기
+                    # 시트별로 분할 → temp_wb 에서 불필요한 시트 제거 후 저장
                     temp_wb = openpyxl.load_workbook(io.BytesIO(original_file_data))
-
                     for s in temp_wb.sheetnames:
                         if s != sheet_name:
                             ws_remove = temp_wb[s]
@@ -273,17 +458,14 @@ def section_three_upload_and_split_excel():
 # ----------------------------------------------------------------
 
 def show_detailed_verification():
-
     check_dict = st.session_state.get("check_dict", {})
     dv = check_dict.get("details_verification", {})
     if not dv:
         st.warning("세부 검증 데이터가 없습니다.")
         return
 
-    # Sub-Tab 2개로 분리
     tabA, tabB = st.tabs(["정산서 검증", "세부매출 검증"])
 
-    # 정산서 검증
     with tabA:
         st.write("#### 정산서 검증")
         rows = dv.get("정산서", [])
@@ -293,7 +475,6 @@ def show_detailed_verification():
             import pandas as pd
             df = pd.DataFrame(rows)
 
-            # match_* 컬럼들에 대해 True->초록, False->빨강
             bool_cols = [c for c in df.columns if c.startswith("match_")]
 
             def highlight_boolean(val):
@@ -304,28 +485,20 @@ def show_detailed_verification():
                 else:
                     return ""
 
-            # ▼ 여기에서 원하는 숫자 컬럼들만 정수로 보이게 format 설정
-            #   예: ["원본_곡비", "정산서_곡비", "원본_공제금액", "정산서_공제금액", ...]
-            #   실제 칼럼명은 코드 상황에 맞춰 지정하세요.
             int_columns = [
                 "원본_곡비", "정산서_곡비",
                 "원본_공제금액", "정산서_공제금액",
                 "원본_공제후잔액", "정산서_공제후잔액",
                 "원본_정산율(%)", "정산서_정산율(%)"
-                # 필요하다면 더 추가
             ]
-
-            # style.format에 {칼럼명: 포맷} 형태의 딕셔너리를 넘기면 각 칼럼별로 적용 가능
-            # "{:.0f}" → 소수점 0자리, 즉 정수로 반올림 표시
             format_dict = {col: "{:.0f}" for col in int_columns if col in df.columns}
 
             st.dataframe(
                 df.style
-                  .format(format_dict)                     # 숫자 칼럼을 정수로 표시
-                  .applymap(highlight_boolean, subset=bool_cols)  # True/False 색상
+                  .format(format_dict)
+                  .applymap(highlight_boolean, subset=bool_cols)
             )
 
-    # 세부매출 검증
     with tabB:
         st.write("#### 세부매출 검증")
         rows = dv.get("세부매출", [])
@@ -344,9 +517,7 @@ def show_detailed_verification():
                 else:
                     return ""
 
-            # 예: "원본_매출액", "정산서_매출액" 같은 칼럼이 있다면 정수로 표시
-            int_columns = ["원본_매출액", "정산서_매출액"]  # 실제 코드 상황에 맞춰 수정
-
+            int_columns = ["원본_매출액", "정산서_매출액"]
             format_dict = {col: "{:.0f}" for col in int_columns if col in df.columns}
 
             st.dataframe(
@@ -357,11 +528,6 @@ def show_detailed_verification():
 
 
 def compare_artists(song_artists, revenue_artists):
-    """
-    input_song cost 아티스트 목록(song_artists) vs
-    input_online revenue 아티스트 목록(revenue_artists) 비교.
-    반환: {'missing_in_song': [...], 'missing_in_revenue': [...], 'common_count': N ...}
-    """
     set_song = set(song_artists)
     set_revenue = set(revenue_artists)
     return {
@@ -373,30 +539,23 @@ def compare_artists(song_artists, revenue_artists):
     }
 
 def normalized_month(m):
-    """예: '202412' → (2024, 12). '202401' → (2024,1). 결과데이터 '2024년 12월'도 같은 것으로 간주 가능."""
     m = m.strip()
     if re.match(r'^\d{6}$', m):  # 202412
         yyyy = int(m[:4])
         mm = int(m[4:])
         return (yyyy, mm)
-    # 혹은 '2024년 12월' => 정규표현식 파싱
     pat = r'^(\d{4})년\s*(\d{1,2})월$'
     mmatch = re.match(pat, m)
     if mmatch:
         yyyy = int(mmatch.group(1))
         mm = int(mmatch.group(2))
         return (yyyy, mm)
-    # 그 외는 원본 그대로
     return m
 
 def almost_equal(a, b, tol=1e-3):
-    """숫자 비교용. 소수점/반올림 미세차이를 무시."""
     return abs(a - b) < tol
 
-
-# ========== [3] 보조 유틸 함수들 ===========
 def get_next_month_str(ym: str) -> str:
-    """'YYYYMM'을 입력받아 다음 달 'YYYYMM'을 반환."""
     year = int(ym[:4])
     month = int(ym[4:])
     month += 1
@@ -405,8 +564,20 @@ def get_next_month_str(ym: str) -> str:
         month = 1
     return f"{year}{month:02d}"
 
+def get_prev_month_str(ym: str) -> str:
+    """
+    'YYYYMM' → 바로 직전 달 'YYYYMM'
+    예) 202501 → 202412
+    """
+    year = int(ym[:4])
+    month = int(ym[4:])
+    month -= 1
+    if month < 1:
+        year -= 1
+        month = 12
+    return f"{year}{month:02d}"
+
 def create_new_spreadsheet(filename: str, folder_id: str, drive_svc, attempt=1, max_attempts=5) -> str:
-    # (기존 코드 동일)
     try:
         query = (
             f"parents in '{folder_id}' and trashed=false "
@@ -432,7 +603,6 @@ def create_new_spreadsheet(filename: str, folder_id: str, drive_svc, attempt=1, 
         return file["id"]
 
     except HttpError as e:
-        # userRateLimitExceeded 등의 경우 재시도 예시
         if (e.resp.status == 403 and
             "userRateLimitExceeded" in str(e) and
             attempt < max_attempts):
@@ -448,16 +618,12 @@ def batch_add_sheets(spreadsheet_id, sheet_svc, list_of_sheet_titles):
     existing_sheets = meta["sheets"]
     existing_titles = [s["properties"]["title"] for s in existing_sheets]
 
-    # 누락된 시트
     missing = [t for t in list_of_sheet_titles if t not in existing_titles]
     if not missing:
         print("모든 시트가 이미 존재합니다.")
         return
 
-    # 분할 크기 설정 (예: 30)
     BATCH_SIZE = 30
-
-    # 하나의 batchUpdate "requests"를 모을 리스트
     requests_add = []
     total_count = 0
     
@@ -474,7 +640,6 @@ def batch_add_sheets(spreadsheet_id, sheet_svc, list_of_sheet_titles):
             }
         })
 
-        # 만약 BATCH_SIZE(30)에 도달하면 API 호출
         if len(requests_add) >= BATCH_SIZE:
             body = {"requests": requests_add}
             resp = sheet_svc.spreadsheets().batchUpdate(
@@ -485,9 +650,8 @@ def batch_add_sheets(spreadsheet_id, sheet_svc, list_of_sheet_titles):
             total_count += len(resp["replies"])
             print(f"분할 addSheet 완료: {len(resp['replies'])}개 생성")
             requests_add.clear()
-            time.sleep(2)  # 잠깐 쉬기 (Rate Limit 완화)
+            time.sleep(2)
 
-    # 남아있는 요청이 있으면 마무리 전송
     if requests_add:
         body = {"requests": requests_add}
         resp = sheet_svc.spreadsheets().batchUpdate(
@@ -499,12 +663,9 @@ def batch_add_sheets(spreadsheet_id, sheet_svc, list_of_sheet_titles):
         requests_add.clear()
 
     print(f"시트 생성 총 개수: {total_count}")
-
-    # ***해당 코드 추가 확인 필요***
     for idx, rep in enumerate(resp["replies"]):
         sheet_props = rep["addSheet"]["properties"]
         print(f" -> {idx} '{sheet_props['title']}' (sheetId={sheet_props['sheetId']})")
-
 
 def duplicate_worksheet_with_new_name(gs_obj, from_sheet_name: str, to_sheet_name: str):
     all_ws = gs_obj.worksheets()
@@ -540,13 +701,8 @@ def to_currency(num):
 
 def update_next_month_tab(song_cost_sh, ym: str):
     """
-    1) 이전 달(ym) 탭에서 아티스트별 '당월 잔액'을 수집
-    2) 다음 달 탭(next_ym)을 복제
-    3) 복제본의 '전월 잔액'을 (1)에서 가져온 값으로 세팅,
-       그리고 '당월 차감액', '당월 잔액' 컬럼은 모두 0으로 초기화
+    예시 함수 (기존 코드 내 사용)
     """
-
-    # (A) 이전 달 탭의 '아티스트명' & '당월 잔액' 읽어오기
     old_ws = song_cost_sh.worksheet(ym)
     old_data = old_ws.get_all_values()
     if not old_data:
@@ -572,10 +728,8 @@ def update_next_month_tab(song_cost_sh, ym: str):
             remain_val = float(row[idx_remain_old].replace(",", ""))
         except:
             remain_val = 0.0
-
         prev_month_dict[artist_name] = remain_val
 
-    # (B) 다음 달 탭 생성 (복제)
     next_ym = get_next_month_str(ym)
     new_ws = duplicate_worksheet_with_new_name(song_cost_sh, ym, next_ym)
     new_data = new_ws.get_all_values()
@@ -587,33 +741,22 @@ def update_next_month_tab(song_cost_sh, ym: str):
     try:
         idx_artist_new = new_header.index("아티스트명")
         idx_prev_new   = new_header.index("전월 잔액")
-
-        # ★ '당월 차감액', '당월 잔액'도 찾아서 0으로 세팅
         idx_deduct_new = new_header.index("당월 차감액")
         idx_remain_new = new_header.index("당월 잔액")
-
     except ValueError:
-        print("새로 만든 시트(다음 달 탭)에 필요한 칼럼('아티스트명', '전월 잔액', '당월 차감액', '당월 잔액')이 없습니다.")
+        print("새로 만든 시트(다음 달 탭)에 필요한 칼럼이 없습니다.")
         return
 
-    # (C) 각 행 업데이트
     content = new_data[1:]
     updated = []
     for row in content:
         row_data = row[:]
         artist_name_new = row_data[idx_artist_new].strip()
-
-        # 1) 전월 잔액 = 이전 달 탭의 '당월 잔액'
         if artist_name_new in prev_month_dict:
             row_data[idx_prev_new] = str(prev_month_dict[artist_name_new])
-
-        # 2) '당월 차감액'과 '당월 잔액'을 0으로 설정
         row_data[idx_deduct_new] = "0"
-        row_data[idx_remain_new] = "0"
-
         updated.append(row_data)
 
-    # (D) 업데이트 반영
     if updated:
         new_ws.update(
             range_name="A2",
@@ -635,6 +778,17 @@ def generate_report(
     progress_bar,
     artist_placeholder
 ):
+    """
+    [요약]
+    1) input_song cost / input_online revenue 시트에서 해당 ym 데이터를 읽어옴
+    2) 아티스트별 매출 및 곡비(전월+당월 발생액, 당월차감 등) 정보를 합산
+    3) 구글 스프레드시트 형태의 'output_report_YYYYMM'을 생성하여
+       - 각 아티스트별 (1) 세부매출내역 탭, (2) 정산서 탭 생성
+       - '정산서' 탭 내 '3. 공제 내역' 칼럼 중 '곡비'를 (전월 잔액 + 당월 발생액)으로 표기
+    4) 최종 검증 정보를 check_dict에 누적
+    5) 작업 완료 후 out_file_id(생성된 구글시트 ID) 반환
+    """
+
     folder_id = st.secrets["google_service_account_a"]["folder_id"]
 
     # ------------------- (A) input_song cost -------------------
@@ -654,34 +808,45 @@ def generate_report(
         st.error(f"'{ym}' 탭이 비어있습니다.")
         return ""
     header_sc = data_sc[0]
+    # 마지막 합계/총계 행은 제외하고 읽는 경우:
     rows_sc = data_sc[1:-1]
 
+    # 이번에 '당월 발생액' 칼럼까지 사용하므로 인덱스 추가
     try:
         idx_artist = header_sc.index("아티스트명")
-        idx_rate = header_sc.index("정산 요율")
-        idx_prev = header_sc.index("전월 잔액")
+        idx_rate   = header_sc.index("정산 요율")
+        idx_prev   = header_sc.index("전월 잔액")
+        idx_curr   = header_sc.index("당월 발생액")
         idx_deduct = header_sc.index("당월 차감액")
         idx_remain = header_sc.index("당월 잔액")
     except ValueError as e:
-        st.error(f"[input_song cost] 시트 컬럼 명이 맞는지 확인 필요: {e}")
+        st.error(f"[input_song cost] 시트 칼럼 명이 맞는지 확인 필요: {e}")
         return ""
 
-    def to_num(x):
-        if not x: return 0.0
-        return float(x.replace("%","").replace(",",""))
+    # 숫자로 변환하는 헬퍼
+    def to_num(x: str) -> float:
+        if not x:
+            return 0.0
+        return float(x.replace("%", "").replace(",", ""))
 
+
+    # 아티스트별 곡비 정보
+    #   → '전월 잔액'(prev), '당월 발생액'(curr), '당월 차감'(deduct), '당월 잔액'(remain), '정산요율'(rate)
+    #   (실제 작업에서는 나중에 '곡비' = prev + curr)
     artist_cost_dict = {}
     for row in rows_sc:
-        artist = row[idx_artist]
-        if not artist: 
+        artist_name = row[idx_artist].strip()
+        if not artist_name:
             continue
         cost_data = {
             "정산요율": to_num(row[idx_rate]),
             "전월잔액": to_num(row[idx_prev]),
+            "당월발생": to_num(row[idx_curr]),
             "당월차감액": to_num(row[idx_deduct]),
             "당월잔액": to_num(row[idx_remain])
         }
-        artist_cost_dict[artist] = cost_data
+        artist_cost_dict[artist_name] = cost_data
+
 
     # ------------------- (B) input_online revenue -------------
     try:
@@ -710,9 +875,10 @@ def generate_report(
         col_service = header_or.index("서비스명")
         col_revenue = header_or.index("권리사정산금액")
     except ValueError as e:
-        st.error(f"[input_online revenue] 시트 컬럼 명이 맞는지 확인 필요: {e}")
+        st.error(f"[input_online revenue] 시트 칼럼 명이 맞는지 확인 필요: {e}")
         return ""
 
+    # 아티스트별 매출 정보
     from collections import defaultdict
     artist_revenue_dict = defaultdict(list)
     for row in rows_or:
@@ -724,7 +890,7 @@ def generate_report(
         mid = row[col_middle]
         srv = row[col_service]
         try:
-            rv_val = float(row[col_revenue].replace(",",""))
+            rv_val = float(row[col_revenue].replace(",", ""))
         except:
             rv_val = 0.0
         artist_revenue_dict[a].append({
@@ -737,44 +903,43 @@ def generate_report(
 
 
     # ---------------------------------------------------------
-    # [추가] 체크 딕셔너리 안에 details_per_artist 키 준비
+    # [추가] check_dict 내부 구조 확인 / 초기화
     # ---------------------------------------------------------
-
-    # (A) 만약 check_dict 안에 'verification_summary' / 'details_verification' 가 없으면 초기화
     if "verification_summary" not in check_dict:
         check_dict["verification_summary"] = {
             "total_errors": 0,
             "artist_error_list": []
         }
-
     if "details_verification" not in check_dict:
         check_dict["details_verification"] = {
             "정산서": [],
             "세부매출": []
         }
-
     if "details_per_artist" not in check_dict:
         check_dict["details_per_artist"] = {}
 
-    # 검증
+    # 아티스트 목록 검증
     song_artists = [r[idx_artist] for r in rows_sc if r[idx_artist]]
     revenue_artists = [r[col_aartist].strip() for r in rows_or if r[col_aartist].strip()]
     check_dict["song_artists"] = song_artists
     check_dict["revenue_artists"] = revenue_artists
+
     compare_res = compare_artists(song_artists, revenue_artists)
     check_dict["artist_compare_result"] = compare_res
 
+
     # ------------------- (C) 아티스트 목록 ---------------
-    all_artists = sorted(set(artist_cost_dict.keys())|set(artist_revenue_dict.keys()))
-    all_artists = [a for a in all_artists if a and a != "합계"]
+    all_artists = sorted(set(artist_cost_dict.keys()) | set(artist_revenue_dict.keys()))
+    all_artists = [a for a in all_artists if a and a not in ("합계", "총계")]
     st.session_state["all_artists"] = all_artists
+
 
     # ------------------- (D) output_report_YYYYMM --------
     out_filename = f"ouput_report_{ym}"
     out_file_id = create_new_spreadsheet(out_filename, folder_id, drive_svc)
     out_sh = gc.open_by_key(out_file_id)
     
-    # sheet1 삭제
+    # 기본생성 sheet1 삭제 시도
     try:
         out_sh.del_worksheet(out_sh.worksheet("Sheet1"))
     except:
@@ -783,46 +948,32 @@ def generate_report(
     year_val = ym[:4]
     month_val = ym[4:]
 
-    # (1) placeholder 준비
-    artist_placeholder = st.empty()
+    # (UI) 진행률 표시용
+    progress_bar.progress(0)
+    artist_placeholder.info("아티스트 보고서 생성 중...")
 
-    # (2) 진행률 바 준비
-    progress_bar = st.progress(0)
-
-    # ────────────── (1) batchUpdate를 한 번만 쓰기 위해 requests 모을 리스트 ──────────────
-    all_requests = []
-    
+    # 시트 생성(batch)
     needed_titles = []
     for artist in all_artists:
         needed_titles.append(f"{artist}(세부매출내역)")
         needed_titles.append(f"{artist}(정산서)")
-
-    # 3) batch_add_sheets
     batch_add_sheets(out_file_id, sheet_svc, needed_titles)
-    # 이때, batch_add_sheets는 위에 예시로 만든 함수
 
-    # --------------- (E) 아티스트별 시트 만들기 -----------
+
+    # ===================================================================
+    # (E) 아티스트별로 (1) 세부매출내역 탭, (2) 정산서 탭 생성
+    # ===================================================================
+
+    all_requests = []  # batchUpdate requests 모음
+
     for i, artist in enumerate(all_artists):
+        # 진행률
         ratio = (i + 1) / len(all_artists)
-
-        # 진행률 바 업데이트
         progress_bar.progress(ratio)
-
-        # placeholder에 “현재 아티스트” 안내
         artist_placeholder.info(f"[{i+1}/{len(all_artists)}] '{artist}' 처리 중...")
 
-        # (실제 처리 로직 / time.sleep 등)
-
-        # ----------------------------
-        # 세부매출내역 탭
-        # ----------------------------
-        # ws_detail_name = f"{artist}(세부매출내역)"
-        # ws_detail = create_worksheet_if_not_exists(out_sh, ws_detail_name, rows=200, cols=7)
-        # ws_detail.clear()
-
+        # (1) 세부매출내역 탭
         ws_detail = out_sh.worksheet(f"{artist}(세부매출내역)")
-
-        # detail data
         details = artist_revenue_dict[artist]
         details_sorted = sorted(details, key=lambda d: album_sort_key(d["album"]))
 
@@ -842,24 +993,24 @@ def generate_report(
                 f"{year_val}년 {month_val}월",
                 to_currency(rv)
             ])
+
+        # 합계
         detail_matrix.append(["합계","","","","","", to_currency(total_det)])
         row_cursor_detail_end = len(detail_matrix)
 
-        ws_detail.update(
-            range_name="A1",
-            values=detail_matrix
-        )
+        # 시트 업데이트
+        ws_detail.update("A1", detail_matrix)
+        time.sleep(1)
 
-        time.sleep(3)        
-
-        # build requests:
+        # 세부매출내역 탭에 대한 서식/테두리 등 batch 요청
         detail_requests = []
+        sheet_id_detail = ws_detail.id
 
-        # updateSheetProperties 로 resize
+        # (A) 시트 크기(row_cursor_detail_end, 7열)
         detail_requests.append({
             "updateSheetProperties": {
                 "properties": {
-                    "sheetId": ws_detail.id,
+                    "sheetId": sheet_id_detail,
                     "gridProperties": {
                         "rowCount": row_cursor_detail_end,
                         "columnCount": 7
@@ -869,68 +1020,52 @@ def generate_report(
             }
         })
 
-        # 1) 열 너비 (A: 120, B:140, ...)
-        # updateDimensionProperties -> dimension='COLUMNS', range-> startIndex=0 ...
-        # A=0, B=1, ...
-        # 예시: A열(0)
-        detail_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_detail.id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 0, 
-                    "endIndex": 1  # A열 한 칸
-                },
-                "properties": {
-                    "pixelSize": 140
-                },
-                "fields": "pixelSize"
-            }
-        })
-        # B열
-        detail_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_detail.id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 1,  # B
-                    "endIndex": 2
-                },
-                "properties": {
-                    "pixelSize": 140
-                },
-                "fields": "pixelSize"
-            }
-        })
-        # E열 -> startIndex=4, endIndex=5
-        detail_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_detail.id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 4,
-                    "endIndex": 5
-                },
-                "properties": {
-                    "pixelSize": 120
-                },
-                "fields": "pixelSize"
-            }
-        })
+        # (B) 열너비 설정 (A=0, B=1, ...)
+        # 예: A열(0) → 140, B열(1) → 140, E열(4) → 120
+        detail_requests.extend([
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id_detail,
+                        "dimension": "COLUMNS",
+                        "startIndex": 0, 
+                        "endIndex": 1
+                    },
+                    "properties": {"pixelSize": 140},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id_detail,
+                        "dimension": "COLUMNS",
+                        "startIndex": 1,
+                        "endIndex": 2
+                    },
+                    "properties": {"pixelSize": 140},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id_detail,
+                        "dimension": "COLUMNS",
+                        "startIndex": 4,
+                        "endIndex": 5
+                    },
+                    "properties": {"pixelSize": 120},
+                    "fields": "pixelSize"
+                }
+            },
+        ])
 
-        # 2) row 높이: (옵션) 특정 행만 or 전체
-        # updateDimensionProperties -> dimension='ROWS'
-        #  예) 1행(0-based -> row=0) 높이 40
-        #    => startIndex=0, endIndex=1
-        # if needed
-
-        # 3) 헤더(A1:G1) 배경/폰트
-        #  => "repeatCell": { "range": ..., "cell": { "userEnteredFormat": {...} } }
-        #  여기서는 "헤더행" 하나만이므로 row=0..1, col=0..7
+        # (C) 헤더(A1~G1) 포맷
         detail_requests.append({
             "repeatCell": {
                 "range": {
-                    "sheetId": ws_detail.id,
+                    "sheetId": sheet_id_detail,
                     "startRowIndex": 0,
                     "endRowIndex": 1,
                     "startColumnIndex": 0,
@@ -951,16 +1086,12 @@ def generate_report(
             }
         })
 
-        # 4) 합계행 병합 & 포매팅
-        #    A{row_cursor_detail_end}:F{row_cursor_detail_end}
-        # => row_cursor_detail_end-1 (0-based)
-        # => ex) if 12행, then row=11
-        sum_row_0based = row_cursor_detail_end-1  # 0-based
-        # 병합
+        # (D) 합계행 병합 + 서식
+        sum_row_0based = row_cursor_detail_end - 1
         detail_requests.append({
             "mergeCells": {
                 "range": {
-                    "sheetId": ws_detail.id,
+                    "sheetId": sheet_id_detail,
                     "startRowIndex": sum_row_0based,
                     "endRowIndex": sum_row_0based+1,
                     "startColumnIndex": 0,
@@ -969,11 +1100,10 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        # 배경색/가운데 정렬
         detail_requests.append({
             "repeatCell": {
                 "range": {
-                    "sheetId": ws_detail.id,
+                    "sheetId": sheet_id_detail,
                     "startRowIndex": sum_row_0based,
                     "endRowIndex": sum_row_0based+1,
                     "startColumnIndex": 0,
@@ -984,19 +1114,17 @@ def generate_report(
                         "backgroundColor": {"red":1.0,"green":0.8,"blue":0.0},
                         "horizontalAlignment": "CENTER",
                         "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "bold": True
-                        }
+                        "textFormat": {"bold": True}
                     }
                 },
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        # 합계값 오른쪽 정렬 => G{sum_row_0based}
+        # 합계값(G열)에 오른쪽 정렬
         detail_requests.append({
             "repeatCell": {
                 "range": {
-                    "sheetId": ws_detail.id,
+                    "sheetId": sheet_id_detail,
                     "startRowIndex": sum_row_0based,
                     "endRowIndex": sum_row_0based+1,
                     "startColumnIndex": 6,
@@ -1011,11 +1139,11 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
             }
         })
-        # 매출 순수익 칼럼 값 오른쪽 정렬 
+        # 매출 순수익 칼럼 (F열=idx=6) 나머지 행들
         detail_requests.append({
             "repeatCell": {
                 "range": {
-                    "sheetId": ws_detail.id,
+                    "sheetId": sheet_id_detail,
                     "startRowIndex": 1,
                     "endRowIndex": sum_row_0based,
                     "startColumnIndex": 6,
@@ -1023,21 +1151,18 @@ def generate_report(
                 },
                 "cell": {
                     "userEnteredFormat": {
-                        "horizontalAlignment": "RIGHT",
-                        "textFormat": {"bold": False}
+                        "horizontalAlignment": "RIGHT"
                     }
                 },
-                "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
+                "fields": "userEnteredFormat(horizontalAlignment)"
             }
         })
 
-        # 5) 전체 테두리
-        # => A1~G{row_cursor_detail_end}
-        # => row=0..row_cursor_detail_end, col=0..7
+        # (E) 전체 테두리
         detail_requests.append({
             "updateBorders": {
                 "range": {
-                    "sheetId": ws_detail.id,
+                    "sheetId": sheet_id_detail,
                     "startRowIndex": 0,
                     "endRowIndex": row_cursor_detail_end,
                     "startColumnIndex": 0,
@@ -1048,76 +1173,106 @@ def generate_report(
                 "left":   {"style":"SOLID","width":1},
                 "right":  {"style":"SOLID","width":1},
                 "innerHorizontal": {"style":"SOLID","width":1},
-                "innerVertical": {"style":"SOLID","width":1}
+                "innerVertical":   {"style":"SOLID","width":1}
             }
         })
 
         all_requests.extend(detail_requests)
 
-        # (추가) 분할 batchUpdate 체크
-        if len(all_requests) >= 200:  # 예: 80개 정도마다 전송
+        # (호출 횟수 분할) 1회 batchUpdate 요청이 너무 커지면 나눠서 전송
+        if len(all_requests) >= 200:
             sheet_svc.spreadsheets().batchUpdate(
                 spreadsheetId=out_file_id,
                 body={"requests": all_requests}
             ).execute()
-            all_requests.clear()     # 전송 후 비우기
-            time.sleep(3)           # 잠시 쉼 (네트워크 안정화)
-
+            all_requests.clear()
+            time.sleep(1)
 
 
         # ------------------------------------------------------
         # 정산서 탭 (batchUpdate 방식)
         # ------------------------------------------------------
-
         ws_report = out_sh.worksheet(f"{artist}(정산서)")
         ws_report_id = ws_report.id
+
+        # 매출 합
+        sum_1 = sum(d["revenue"] for d in details_sorted)  # "음원서비스별" 총합
+        # 앨범별 합
+        album_sum = defaultdict(float)
+        for d in details_sorted:
+            album_sum[d["album"]] += d["revenue"]
+        sum_2 = sum(album_sum.values())
+
+        # (A) "곡비" = "전월 잔액 + 당월 발생액" (요청 사항)
+        prev_val = artist_cost_dict[artist]["전월잔액"]
+        curr_val = artist_cost_dict[artist]["당월발생"]
+        # 보고서 '3. 공제 내역'의 '곡비' 칼럼 값 = prev_val + curr_val
+        song_cost_for_report = prev_val + curr_val
+
+        # (B) 공제 금액 & 잔액
+        deduct_val = artist_cost_dict[artist]["당월차감액"]  # 이미 input_song cost에서 계산된 값
+        remain_val = artist_cost_dict[artist]["당월잔액"]   # 동일
+        # "공제 적용 후" 매출 = (음원 매출 합) - 공제금액 => sum_2 - deduct_val
+        # (단, 요청 사항/업무로직에 따라 정확히 어떻게 적용할지는 케이스별로 맞춤)
+
+        # (C) 정산율 / 최종 정산금액
+        rate_val = artist_cost_dict[artist]["정산요율"]
+        공제적용후 = sum_2 - deduct_val
+        final_amount = 공제적용후 * (rate_val / 100.0)
         
 
-        # 1) report_matrix 생성 (기존 방식 그대로)
+        # --------------------------------------
+        # 정산서 테이블(직접 row col 배열 채우기)
+        # --------------------------------------
         report_matrix = []
         for _ in range(300):
             report_matrix.append([""] * 8)
 
-        report_matrix[1][6] = report_date
+        # 1) 상단 공통정보
+        report_matrix[1][6] = report_date   # 보고서 발행일
         report_matrix[3][1] = f"{year_val}년 {month_val}월 판매분"
         report_matrix[5][1] = f"{artist}님 음원 정산 내역서"
 
         report_matrix[7][0] = "•"
-        report_matrix[7][1] = "저희와 함께해 주셔서 정말 감사하고 앞으로도 잘 부탁드리겠습니다!"
+        report_matrix[7][1] = "저희와 함께해 주셔서 감사합니다!"
         report_matrix[8][0] = "•"
         report_matrix[8][1] = f"{year_val}년 {month_val}월 음원의 수익을 아래와 같이 정산드립니다."
         report_matrix[9][0] = "•"
-        report_matrix[9][1] = "정산 관련하여 문의사항이 있다면 무엇이든, 언제든 편히 메일 주세요!"
+        report_matrix[9][1] = "정산 문의사항은 언제든 편히 메일 주세요!"
         report_matrix[9][5] = "E-Mail : lucasdh3013@naver.com"
 
-        # 1. 음원 서비스별
+        # -----------------------------------------------------------------
+        # 1. 음원 서비스별 정산내역 (세부매출 그대로)
+        # -----------------------------------------------------------------
         report_matrix[12][0] = "1."
         report_matrix[12][1] = "음원 서비스별 정산내역"
-        header_row1 = 13
-        headers_1 = ["앨범", "대분류", "중분류", "서비스명", "기간", "매출액"]
-        for i, val in enumerate(headers_1):
-            report_matrix[header_row1][1 + i] = val
 
-        row_cursor = header_row1 + 1
-        sum_1 = 0
+        header_row_1 = 13
+        headers_1 = ["앨범", "대분류", "중분류", "서비스명", "기간", "매출액"]
+        for i_h, val_h in enumerate(headers_1):
+            report_matrix[header_row_1][1 + i_h] = val_h
+
+        row_cursor = header_row_1 + 1
         for d in details_sorted:
-            rev = d["revenue"]
-            sum_1 += rev
+            rv = d["revenue"]
             report_matrix[row_cursor][1] = d["album"]
             report_matrix[row_cursor][2] = d["major"]
             report_matrix[row_cursor][3] = d["middle"]
             report_matrix[row_cursor][4] = d["service"]
             report_matrix[row_cursor][5] = f"{year_val}년 {month_val}월"
-            report_matrix[row_cursor][6] = to_currency(rev)
+            report_matrix[row_cursor][6] = to_currency(rv)
             row_cursor += 1
 
         row_cursor += 1
-        row_cursor_sum1 = row_cursor + 1
+        # 합계
         report_matrix[row_cursor][1] = "합계"
         report_matrix[row_cursor][6] = to_currency(sum_1)
+        row_cursor_sum1 = row_cursor
         row_cursor += 2
 
-        # 2. 앨범별 정산
+        # -----------------------------------------------------------------
+        # 2. 앨범 별 정산 내역
+        # -----------------------------------------------------------------
         report_matrix[row_cursor][0] = "2."
         report_matrix[row_cursor][1] = "앨범 별 정산 내역"
         row_cursor += 1
@@ -1127,29 +1282,28 @@ def generate_report(
         report_matrix[row_cursor][6] = "매출액"
         row_cursor += 1
 
-        album_sum = defaultdict(float)
-        for d in details_sorted:
-            album_sum[d["album"]] += d["revenue"]
-
-        sum_2 = 0
         for alb in sorted(album_sum.keys(), key=album_sort_key):
             amt = album_sum[alb]
-            sum_2 += amt
             report_matrix[row_cursor][1] = alb
             report_matrix[row_cursor][5] = f"{year_val}년 {month_val}월"
             report_matrix[row_cursor][6] = to_currency(amt)
             row_cursor += 1
 
-        row_cursor_sum2 = row_cursor + 1
+        row_cursor += 1
         report_matrix[row_cursor][1] = "합계"
         report_matrix[row_cursor][6] = to_currency(sum_2)
+        row_cursor_sum2 = row_cursor
         row_cursor += 2
 
+        # -----------------------------------------------------------------
         # 3. 공제 내역
+        #    (요청사항: '곡비' 칼럼 = (전월 잔액 + 당월 발생액))
+        # -----------------------------------------------------------------
         report_matrix[row_cursor][0] = "3."
         report_matrix[row_cursor][1] = "공제 내역"
         row_cursor += 1
         row_cursor_deduction = row_cursor
+
         report_matrix[row_cursor][1] = "앨범"
         report_matrix[row_cursor][2] = "곡비"
         report_matrix[row_cursor][3] = "공제 금액"
@@ -1157,22 +1311,25 @@ def generate_report(
         report_matrix[row_cursor][6] = "공제 적용 금액"
         row_cursor += 1
 
-        row_cursor_sum3 = row_cursor + 1
-        prev_val = artist_cost_dict[artist]["전월잔액"]
-        deduct_val = artist_cost_dict[artist]["당월차감액"]
-        remain_val = artist_cost_dict[artist]["당월잔액"]
-        공제적용 = sum_2 - deduct_val
-
+        # 앨범(들)을 표기만 할지, 혹은 여러줄로 표현할지 등은 업무 규칙에 따라
         alb_list = sorted(album_sum.keys(), key=album_sort_key)
         alb_str = ", ".join(alb_list) if alb_list else "(앨범 없음)"
-        report_matrix[row_cursor][1] = alb_str
-        report_matrix[row_cursor][2] = to_currency(prev_val)
-        report_matrix[row_cursor][3] = to_currency(deduct_val)
-        report_matrix[row_cursor][5] = to_currency(remain_val)
-        report_matrix[row_cursor][6] = to_currency(공제적용)
-        row_cursor += 2
 
+        report_matrix[row_cursor][1] = alb_str
+        # (중요) 여기서 "곡비" = prev_val + curr_val
+        report_matrix[row_cursor][2] = to_currency(song_cost_for_report)
+        # 공제금액
+        report_matrix[row_cursor][3] = to_currency(deduct_val)
+        # 공제 후 남은 곡비
+        report_matrix[row_cursor][5] = to_currency(remain_val)
+        # 공제 적용 금액 (매출 - 공제금액)
+        report_matrix[row_cursor][6] = to_currency(sum_2 - deduct_val)
+        row_cursor += 2
+        row_cursor_sum3 = row_cursor
+
+        # -----------------------------------------------------------------
         # 4. 수익 배분
+        # -----------------------------------------------------------------
         report_matrix[row_cursor][0] = "4."
         report_matrix[row_cursor][1] = "수익 배분"
         row_cursor += 1
@@ -1183,8 +1340,6 @@ def generate_report(
         report_matrix[row_cursor][6] = "적용 금액"
         row_cursor += 1
 
-        rate_val = artist_cost_dict[artist]["정산요율"]
-        final_amount = 공제적용 * (rate_val / 100.0)
         report_matrix[row_cursor][1] = alb_str
         report_matrix[row_cursor][2] = "수익 배분율"
         report_matrix[row_cursor][3] = f"{int(rate_val)}%"
@@ -1199,22 +1354,17 @@ def generate_report(
         report_matrix[row_cursor][6] = "* 부가세 별도"
         row_cursor_report_end = row_cursor + 2
 
-        # (2) 시트에 업데이트
-        ws_report.update(
-            range_name="A1",
-            values=report_matrix)
+        # 시트에 실제 업로드
+        ws_report.update("A1", report_matrix)
+        time.sleep(1)
 
-
-
-        # ---------------------------------------------------------
-        # 계산된 값들 -> check_dict 에 저장
-        # ---------------------------------------------------------
-        # (A) 1번 음원 서비스별 매출 검증
+        # ------------------------------------
+        # (검증) check_dict에 비교결과 반영
+        # ------------------------------------
+        # (1) 세부매출 vs 정산서
         for d in details_sorted:
-            album_service = (d["album"], d["service"])
-            original_val = d["revenue"]   # 원본
-            # 정산서 쪽도 사실상 d["revenue"]를 사용했으므로:
-            report_val = d["revenue"]
+            original_val = d["revenue"]
+            report_val   = d["revenue"]  # 현재는 동일
             is_match = almost_equal(original_val, report_val)
             if not is_match:
                 check_dict["verification_summary"]["total_errors"] += 1
@@ -1231,35 +1381,40 @@ def generate_report(
             }
             check_dict["details_verification"]["세부매출"].append(row_report_item)
 
-        # (B) 3번 공제 내역 검증 (곡비/공제금액/공제 후 남은 곡비)
-        is_match_prev   = almost_equal(prev_val,  artist_cost_dict[artist]["전월잔액"])
-        is_match_deduct = almost_equal(deduct_val,artist_cost_dict[artist]["당월차감액"])
-        is_match_remain = almost_equal(remain_val,artist_cost_dict[artist]["당월잔액"])
-        if not (is_match_prev and is_match_deduct and is_match_remain):
+        # (2) 공제 내역(곡비,공제금액,공제후잔액)
+        #   원본(= input_song cost) 값 vs 보고서 값
+        #   "곡비"는 (prev + curr), "공제금액"=deduct_val, "남은 곡비"=remain_val
+        #   *원본_곡비 = (전월잔액 + 당월발생)
+        original_song_cost = artist_cost_dict[artist]["전월잔액"] + artist_cost_dict[artist]["당월발생"]
+        is_match_songcost = almost_equal(original_song_cost, song_cost_for_report)
+        is_match_deduct   = almost_equal(artist_cost_dict[artist]["당월차감액"], deduct_val)
+        is_match_remain   = almost_equal(artist_cost_dict[artist]["당월잔액"], remain_val)
+
+        if not (is_match_songcost and is_match_deduct and is_match_remain):
             check_dict["verification_summary"]["total_errors"] += 1
             check_dict["verification_summary"]["artist_error_list"].append(artist)
 
         row_report_item_3 = {
             "아티스트": artist,
             "구분": "공제내역",
-            "원본_곡비": artist_cost_dict[artist]["전월잔액"],
-            "정산서_곡비": prev_val,
-            "match_곡비": is_match_prev,
-
+            # 곡비
+            "원본_곡비": original_song_cost,
+            "정산서_곡비": song_cost_for_report,
+            "match_곡비": is_match_songcost,
+            # 공제금액
             "원본_공제금액": artist_cost_dict[artist]["당월차감액"],
             "정산서_공제금액": deduct_val,
             "match_공제금액": is_match_deduct,
-
+            # 공제후잔액
             "원본_공제후잔액": artist_cost_dict[artist]["당월잔액"],
             "정산서_공제후잔액": remain_val,
             "match_공제후잔액": is_match_remain,
         }
         check_dict["details_verification"]["정산서"].append(row_report_item_3)
 
-        # (C) 4번 수익 배분율 검증
+        # (3) 4번 수익 배분율
         original_rate = artist_cost_dict[artist]["정산요율"]
-        report_rate   = rate_val   # 위에서 사용한 rate_val
-        is_rate_match = almost_equal(original_rate, report_rate)
+        is_rate_match = almost_equal(original_rate, rate_val)
         if not is_rate_match:
             check_dict["verification_summary"]["total_errors"] += 1
             check_dict["verification_summary"]["artist_error_list"].append(artist)
@@ -1268,22 +1423,23 @@ def generate_report(
             "아티스트": artist,
             "구분": "수익배분율",
             "원본_정산율(%)": original_rate,
-            "정산서_정산율(%)": report_rate,
+            "정산서_정산율(%)": rate_val,
             "match_정산율": is_rate_match,
         }
         check_dict["details_verification"]["정산서"].append(row_report_item_4)
 
+        time.sleep(1)   
 
-        time.sleep(3)   
-
-        # (3) 한 번의 batchUpdate: 열너비, 행높이, 병합, 서식, 테두리 ...
+        # --------------------------------------------------
+        # 정산서 탭(디자인/서식) batchUpdate
+        # --------------------------------------------------
         report_requests = []
 
-        # updateSheetProperties 로 resize
+        # (A) 시트 row/col 크기
         report_requests.append({
             "updateSheetProperties": {
                 "properties": {
-                    "sheetId": ws_report.id,
+                    "sheetId": ws_report_id,
                     "gridProperties": {
                         "rowCount": row_cursor_report_end,
                         "columnCount": 8
@@ -1293,132 +1449,135 @@ def generate_report(
             }
         })
 
-        # 3-1) 열너비 (A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7)
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 0,
-                    "endIndex": 1
-                },
-                "properties": { "pixelSize": 40 },
-                "fields": "pixelSize"
-            }
-        })
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 1,
-                    "endIndex": 2
-                },
-                "properties": { "pixelSize": 200 },
-                "fields": "pixelSize"
-            }
-        })
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 2,
-                    "endIndex": 3
-                },
-                "properties": { "pixelSize": 130 },
-                "fields": "pixelSize"
-            }
-        })
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 3,
-                    "endIndex": 4
-                },
-                "properties": { "pixelSize": 120 },
-                "fields": "pixelSize"
-            }
-        })
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 4,
-                    "endIndex": 5
-                },
-                "properties": { "pixelSize": 130 },
-                "fields": "pixelSize"
-            }
-        })
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 5,
-                    "endIndex": 6
-                },
-                "properties": { "pixelSize": 130 },
-                "fields": "pixelSize"
-            }
-        })
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 6,
-                    "endIndex": 7
-                },
-                "properties": { "pixelSize": 130 },
-                "fields": "pixelSize"
-            }
-        })
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 7,
-                    "endIndex": 8
-                },
-                "properties": { "pixelSize": 40 },
-                "fields": "pixelSize"
-            }
-        })
+        # (B) 열너비 (A=0 ~ H=7)
+        report_requests.extend([
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 0,
+                        "endIndex": 1
+                    },
+                    "properties": {"pixelSize": 40},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 1,
+                        "endIndex": 2
+                    },
+                    "properties": {"pixelSize": 200},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 2,
+                        "endIndex": 3
+                    },
+                    "properties": {"pixelSize": 130},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 3,
+                        "endIndex": 4
+                    },
+                    "properties": {"pixelSize": 120},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 4,
+                        "endIndex": 5
+                    },
+                    "properties": {"pixelSize": 130},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 5,
+                        "endIndex": 6
+                    },
+                    "properties": {"pixelSize": 130},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 6,
+                        "endIndex": 7
+                    },
+                    "properties": {"pixelSize": 130},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 7,
+                        "endIndex": 8
+                    },
+                    "properties": {"pixelSize": 40},
+                    "fields": "pixelSize"
+                }
+            },
+        ])
 
-        # 3-2) 행높이 (옵션) => 예) 4행(3 in 0-based), 6행(5 in 0-based) 높이=30
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "ROWS",
-                    "startIndex": 3,  # 4행
-                    "endIndex": 4
-                },
-                "properties": { "pixelSize": 30 },
-                "fields": "pixelSize"
-            }
-        })
-        report_requests.append({
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "dimension": "ROWS",
-                    "startIndex": 5,  # 6행
-                    "endIndex": 6
-                },
-                "properties": { "pixelSize": 30 },
-                "fields": "pixelSize"
-            }
-        })
+        # (C) 특정행 높이
+        report_requests.extend([
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "ROWS",
+                        "startIndex": 3,
+                        "endIndex": 4
+                    },
+                    "properties": {"pixelSize": 30},
+                    "fields": "pixelSize"
+                }
+            },
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws_report_id,
+                        "dimension": "ROWS",
+                        "startIndex": 5,
+                        "endIndex": 6
+                    },
+                    "properties": {"pixelSize": 30},
+                    "fields": "pixelSize"
+                }
+            },
+        ])
 
-
-        # 4-1) 상단 고정 항목(발행 날짜, H2: row=1, col=6)
+        # (D) 상단 고정 항목(발행 날짜, H2: row=1, col=6)
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -1443,7 +1602,7 @@ def generate_report(
             }
         })        
 
-        # 4-2) 상단 고정 항목(판매분, B4:E4)
+        # (E) 상단 고정 항목(판매분, B4:E4)
         report_requests.append({
             "mergeCells": {
                 "range": {
@@ -1480,7 +1639,7 @@ def generate_report(
             }
         })
 
-        # 4-3) 상단 고정 항목(아티스트 정산내역서, B6:G6)
+        # (F) 상단 고정 항목(아티스트 정산내역서, B6:G6)
         report_requests.append({
             "mergeCells": {
                 "range": {
@@ -1518,7 +1677,7 @@ def generate_report(
             }
         })
 
-        # 4-4) 상단 고정 항목(안내문, B8:E8~B10:E10)
+        # (G) 상단 고정 항목(안내문, B8:E8~B10:E10)
         #8행
         report_requests.append({
             "mergeCells": {
@@ -1659,7 +1818,7 @@ def generate_report(
             }
         })
         
-        # 4-5) 1열 정렬 (번호 영역)
+        # (H) 1열 정렬 (번호 영역)
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -1684,7 +1843,7 @@ def generate_report(
             }
         })
 
-        # 4-6) 하단 고정 항목(부가세, G)
+        # (I) 하단 고정 항목(부가세, G)
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -1710,7 +1869,7 @@ def generate_report(
         }) 
     
 
-        # 5-1) "음원 서비스별 정산내역" 표 타이틀
+        # (J-1) "음원 서비스별 정산내역" 표 타이틀
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -1732,7 +1891,7 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        # 5-2) "음원 서비스별 정산내역" 표 헤더 (Row=13)
+        # (J-2) "음원 서비스별 정산내역" 표 헤더 (Row=13)
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -1757,7 +1916,7 @@ def generate_report(
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        # 5-3) 합계행 전 병합
+        # (J-3) 합계행 전 병합
         report_requests.append({
             "mergeCells": {
                 "range": {
@@ -1770,7 +1929,7 @@ def generate_report(
                 "mergeType": "MERGE_ALL"
             }
         })
-        # 5-4) 합계행 병합
+        # (J-4) 합계행 병합
         report_requests.append({
             "mergeCells": {
                 "range": {
@@ -1831,7 +1990,7 @@ def generate_report(
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        # 5-5) 표에 Banding (줄무늬 효과)
+        # (J-5) 표에 Banding (줄무늬 효과)
         banding_start_row = 14
         banding_end_row = row_cursor_sum1 - 2
         banding_start_col = 1
@@ -1884,7 +2043,7 @@ def generate_report(
             })
 
 
-        # 6-1) 앨범별 정산내역 타이틀
+        # (K-1) 앨범별 정산내역 타이틀
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -1906,8 +2065,7 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-
-        # 6-2) 앨범별 정산내역 헤더
+        # (K-2) 앨범별 정산내역 헤더
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -1932,7 +2090,7 @@ def generate_report(
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        # 6-3) 앨범별 정산내역 표 본문
+        # (K-3) 앨범별 정산내역 표 본문
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -1956,7 +2114,7 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        # 6-4) 앨범별 정산내역 합계행
+        # (K-4) 앨범별 정산내역 합계행
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -1980,7 +2138,7 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        # 6-5) 합계행 병합
+        # (K-5) 합계행 병합
         report_requests.append({
             "mergeCells": {
                 "range": {
@@ -2043,7 +2201,7 @@ def generate_report(
         })
 
 
-        # 7-1) 공제 내역 타이틀
+        # (L-1) 공제 내역 타이틀
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -2065,8 +2223,7 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-
-        # 7-2) 공제 내역 헤더
+        # (L-2) 공제 내역 헤더
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -2091,8 +2248,7 @@ def generate_report(
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        
-        # 7-3) 공제 내역 표 본문 (데이터부분)
+        # (L-3) 공제 내역 표 본문 (데이터부분)
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -2116,8 +2272,7 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        
-        # 7-4) 공제 내역 표 본문 (합계 부분)
+        # (L-4) 공제 내역 표 본문 (합계 부분)
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -2143,7 +2298,7 @@ def generate_report(
         })
 
 
-        # 8-1) 수익 배분 타이틀
+        # (M-1) 수익 배분 타이틀
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -2165,8 +2320,7 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-
-        # 8-2) 수익 배분 헤더
+        # (M-2) 수익 배분 헤더
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -2191,8 +2345,7 @@ def generate_report(
                 "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        
-        # 8-3) 수익 배분 표 본문 
+        # (M-3) 수익 배분 표 본문 
         report_requests.append({
             "repeatCell": {
                 "range": {
@@ -2216,8 +2369,7 @@ def generate_report(
                 "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
             }
         })
-        
-        # 8-4) 수익 배분 표 합계행 병합
+        # (M-4) 수익 배분 표 합계행 병합
         report_requests.append({
             "mergeCells": {
                 "range": {
@@ -2280,7 +2432,7 @@ def generate_report(
         })
 
 
-        # 9-1) 전체 테두리 화이트
+        # (N) 전체 테두리 화이트
         report_requests.append({
             "updateBorders": {
                 "range": {
@@ -2299,7 +2451,8 @@ def generate_report(
             }
         })
         
-        # 9-2) 표 부분 점선 
+
+        # (O) 표 부분 점선 
         def add_dotted_borders(r1, r2, c1, c2):
             """바깥+안쪽 모두 DOTTED"""
             report_requests.append({
@@ -2328,7 +2481,8 @@ def generate_report(
         # 4번 섹션 
         add_dotted_borders(row_cursor_rate, row_cursor_sum4+1, 1, 7)
         
-        # 9-3) 시트 외곽 검정 SOLID 
+
+        # (P) 시트 외곽 검정 SOLID 
         report_requests.append({
             "updateBorders": {
                 "range": {
@@ -2348,52 +2502,59 @@ def generate_report(
         
         all_requests.extend(report_requests)
 
-        # (추가) 분할 batchUpdate 체크
-        if len(all_requests) >200:
+
+        # batchUpdate 분할 전송
+        if len(all_requests) >= 200:
             sheet_svc.spreadsheets().batchUpdate(
                 spreadsheetId=out_file_id,
                 body={"requests": all_requests}
             ).execute()
             all_requests.clear()
-            time.sleep(3)
+            time.sleep(1)
 
-
-    # -----------------
-    # batchUpdate 실행
-    # -----------------
+    # ---------------------------
+    # 마지막으로 남은 요청들을 일괄 처리
+    # ---------------------------
     if all_requests:
         sheet_svc.spreadsheets().batchUpdate(
             spreadsheetId=out_file_id,
             body={"requests": all_requests}
         ).execute()
         all_requests.clear()
-
-    time.sleep(2)
+    time.sleep(1)
 
     # 루프 끝나면 처리 완료 메시지 (원한다면)
     artist_placeholder.success("모든 아티스트 처리 완료!")
 
-    # 다음 달 탭 복제
+    # ----------------------
+    # 다음달 탭 복제 (옵션)
+    # ----------------------
     update_next_month_tab(song_cost_sh, ym)
-  
-    time.sleep(1)   
+    time.sleep(1)
 
+    # 최종 결과 반환
     return out_file_id
+
 
 # ========== [5] Streamlit UI =============
 def main():
     st.title("아티스트 음원 정산 보고서 자동 생성기")
 
-    # 2) 섹션 1: 보고서 생성
+    # 맨 앞단 - 곡비 파일 제작/수정 섹션
+    section_zero_prepare_song_cost()
+    st.divider()
+
+    # 섹션 1: 보고서 생성
     section_one_report_input()
     st.divider()
 
-    # 3) 섹션 2: 시트 링크 및 검증 결과
+    # 섹션 2: 시트 링크 & 검증
     section_two_sheet_link_and_verification()
     st.divider()
 
-    # 4) 섹션 3: 압축파일 다운로드
+    # 섹션 3: 엑셀 업로드 후 시트분할 ZIP 다운로드
     section_three_upload_and_split_excel()
+
 
 if __name__ == "__main__":
     main()
