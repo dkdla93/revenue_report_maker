@@ -234,7 +234,7 @@ def section_zero_prepare_song_cost():
         start_row = 2  # 시트상 2행부터 데이터(헤더가 1행)
         end_row   = 1 + total_rows  # 2행 + (total_rows - 1)
 
-        range_notation = f"D{start_row}:F{end_row}"
+        range_notation = f"C{start_row}:F{end_row}"
 
 
         # 3) batch_update() 호출
@@ -735,6 +735,7 @@ def update_next_month_tab(song_cost_sh, ym: str):
         print("이전 달 시트에 '아티스트명' 또는 '당월 잔액' 칼럼이 없습니다.")
         return
 
+    # 전월 잔액을 dict로 모아둠
     prev_month_dict = {}
     for row in old_body:
         artist_name = row[idx_artist_old].strip()
@@ -746,8 +747,11 @@ def update_next_month_tab(song_cost_sh, ym: str):
             remain_val = 0.0
         prev_month_dict[artist_name] = remain_val
 
+    # 다음 달 시트 만들기(복제)
     next_ym = get_next_month_str(ym)
     new_ws = duplicate_worksheet_with_new_name(song_cost_sh, ym, next_ym)
+    
+    # 복제된 시트의 데이터 읽기
     new_data = new_ws.get_all_values()
     if not new_data:
         print(f"복제된 '{next_ym}' 탭이 비어 있습니다.")
@@ -758,28 +762,46 @@ def update_next_month_tab(song_cost_sh, ym: str):
         idx_artist_new = new_header.index("아티스트명")
         idx_prev_new   = new_header.index("전월 잔액")
         idx_deduct_new = new_header.index("당월 차감액")
-        idx_remain_new = new_header.index("당월 잔액")
+        # idx_remain_new = new_header.index("당월 잔액")
     except ValueError:
         print("새로 만든 시트(다음 달 탭)에 필요한 칼럼이 없습니다.")
         return
+    
+    # 본문 (마지막 합계 행은 제외)
+    content = new_data[1:-1]
 
-    content = new_data[1:]
-    updated = []
+    updated_prev_vals = []   # D열에 들어갈 값
+    updated_deduct_vals = [] # F열에 들어갈 값
+
     for row in content:
-        row_data = row[:]
-        artist_name_new = row_data[idx_artist_new].strip()
-        if artist_name_new in prev_month_dict:
-            row_data[idx_prev_new] = str(prev_month_dict[artist_name_new])
-        row_data[idx_deduct_new] = "0"
-        updated.append(row_data)
+        artist = row[idx_artist_new].strip()
+        old_val = prev_month_dict.get(artist, 0.0)  # 전월 잔액
+        updated_prev_vals.append([old_val])
+        updated_deduct_vals.append(["0"])  # 당월 차감액은 0으로 초기화
 
-    if updated:
-        new_ws.update(
-            range_name="A2",
-            values=updated,
-            value_input_option="USER_ENTERED"
-        )
-    print(f"'{ym}' → '{next_ym}' 탭 복제 및 전월/당월 잔액 세팅 완료!")
+    row_count = len(content)
+    start_row = 2
+    end_row   = 1 + row_count
+
+    # batch_update에 쓸 requests
+    requests_body = [
+        {
+            "range": f"D{start_row}:D{end_row}",
+            "values": updated_prev_vals
+        },
+        {
+            "range": f"F{start_row}:F{end_row}",
+            "values": updated_deduct_vals
+        }
+    ]
+
+    # 한 번에 batch_update로 호출
+    new_ws.batch_update(
+        requests_body,
+        value_input_option="USER_ENTERED"
+    )
+
+    print(f"'{ym}' → '{next_ym}' 탭 복제 및 전월/당월 차감액만 갱신(배치 업데이트) 완료!")
 
 
 
