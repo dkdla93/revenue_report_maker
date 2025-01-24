@@ -145,17 +145,18 @@ def section_zero_prepare_song_cost():
         if not data_new:
             st.error(f"'{new_ym}' 탭이 비어있습니다.")
             return
+        
         header_new = data_new[0]
-        body_new   = data_new[1:]
+        # 맨 마지막 합계행(합계,총계)이 수식/합계를 포함하는 경우 → body_new = data_new[1:-1]로 제외
+        body_new = data_new[1:-1]  # [중요] 마지막 행(합계)은 업데이트에서 제외
 
         # 칼럼 인덱스 찾기
         try:
             idx_artist_n = header_new.index("아티스트명")
-            idx_rate_n   = header_new.index("정산 요율")
-            idx_prev_n   = header_new.index("전월 잔액")
+            idx_prev_n   = header_new.index("전월 잔액")  
             idx_curr_n   = header_new.index("당월 발생액")
             idx_ded_n    = header_new.index("당월 차감액")
-            idx_remain_n = header_new.index("당월 잔액")
+            # idx_remain_n = header_new.index("당월 잔액")  # 수식 칼럼 → 안 건드림
         except ValueError as e:
             st.error(f"[input_song cost-{new_ym}] 시트 칼럼 확인 필요: {e}")
             return
@@ -178,10 +179,11 @@ def section_zero_prepare_song_cost():
             col_artist_rev = header_rev.index("앨범아티스트")
             col_revenue    = header_rev.index("권리사정산금액")
         except ValueError as e:
-            st.error(f"[input_online revenue-{new_ym}] 시트에 '앨범아티스트' 또는 '권리사정산금액' 칼럼이 없습니다: {e}")
+            st.error(f"[input_online revenue-{new_ym}] '앨범아티스트' 또는 '권리사정산금액' 칼럼이 없습니다: {e}")
             return
 
         # 아티스트별 매출 합산
+        from collections import defaultdict
         sum_revenue_dict = defaultdict(float)
         for row in body_rev:
             a = row[col_artist_rev].strip()
@@ -193,51 +195,63 @@ def section_zero_prepare_song_cost():
                 rv_val = 0.0
             sum_revenue_dict[a] += rv_val
 
-        # ---- (4) 이번 달 탭 body_new 업데이트 ----
-        updated_rows = []
-        for row in body_new:
-            row_data = row[:]  # 복사
+
+        # -------------------------------------------
+        # [중요] batch_update를 위한 2D 배열 만들기
+        # -------------------------------------------
+        total_rows = len(body_new)  # 합계행 제외한 개수
+        # D열 ~ F열에 쓸 데이터(각각 row 수만큼 2D)
+        #  - D열(index=3) → 전월 잔액
+        #  - E열(index=4) → 당월 발생액
+        #  - F열(index=5) → 당월 차감액
+        updated_vals_for_def = []  # shape: [total_rows][3]
+
+        for row_idx, row_data in enumerate(body_new):
             artist_n = row_data[idx_artist_n].strip()
             if not artist_n or artist_n in ("합계", "총계"):
-                updated_rows.append(row_data)
+                # 혹시 중간에 '합계'가 있으면 무시
+                updated_vals_for_def.append(["", "", ""])
                 continue
 
-            # 전월 잔액 = prev_remain_dict에서 가져오기 (없으면 0)
             old_prev_val = prev_remain_dict.get(artist_n, 0.0)
-            row_data[idx_prev_n] = str(old_prev_val)
-
-            # 당월 발생액 = 공란
-            row_data[idx_curr_n] = ""
-
-            # 당월 차감액 = min(매출합, 전월잔액+당월발생액)
-            #   단, 현재는 "당월발생액"=0으로 간주(=공란)
-            #   => effectively: min(매출합, 전월잔액)
+            curr_val = 0  # 당월발생액
             rev_sum = sum_revenue_dict.get(artist_n, 0.0)
-            # 전월 + 당월발생액(0)
-            can_deduct_max = old_prev_val  # (전월잔액)
-            actual_deduct = rev_sum
-            if rev_sum > can_deduct_max:
-                actual_deduct = can_deduct_max
-            row_data[idx_ded_n] = str(actual_deduct)
 
-            # '당월 잔액'은 수식이 걸려있으므로 직접 쓰지 않고 그대로 두기
-            # row_data[idx_remain_n] = (some formula) -> 유지
+            # min(전월+당월발생, 매출합)
+            can_deduct = old_prev_val + curr_val
+            actual_deduct = rev_sum if rev_sum <= can_deduct else can_deduct
 
-            updated_rows.append(row_data)
+            updated_vals_for_def.append([
+                old_prev_val,
+                curr_val,
+                actual_deduct
+            ])
 
-        # ---- (5) 시트에 bulk update ----
-        if updated_rows:
-            rng_start = "A2"  # 헤더가 1행이므로, 2행부터
-            ws_new.update(
-                range_name=rng_start,
-                values=updated_rows,
-                value_input_option="USER_ENTERED"
-            )
+        # 2) Range 설정: 
+        #    - gspread에서 "A1표기"로 "D2:F{N+1}" 을 업데이트하면
+        #      body_new의 row_idx=0 → 시트의 2행
+        #      row_idx=(N-1) → 시트의 (N+1)행
+        start_row = 2  # 시트상 2행부터 데이터(헤더가 1행)
+        end_row   = 1 + total_rows  # 2행 + (total_rows - 1)
+        range_notation = f"{ws_new.title}!D{start_row}:F{end_row}"
 
-        st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
+        # 3) batch_update() 호출
+        #    requests 구조: [{range: "...", values: [...]}]
+        requests_body = [
+            {
+                "range": range_notation,
+                "values": updated_vals_for_def
+            }
+        ]
+        # ws_new.batch_update(...)도 가능하지만,
+        # sheet단위(gspread <-> Worksheet object)에는 아래처럼:
+        ws_new.batch_update(
+            requests_body,
+            value_input_option="USER_ENTERED"
+        )
+
+        st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료! (batch_update 사용, 수식 보존)")
         st.session_state["song_cost_prepared"] = True
-
-
 
 
 
