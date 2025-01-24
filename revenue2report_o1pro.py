@@ -2452,7 +2452,7 @@ def generate_report(
                 "range": {
                     "sheetId": ws_report_id,
                     "startRowIndex": 0,
-                    "endRowIndex": row_cursor_report_end-1,
+                    "endRowIndex": row_cursor_report_end,
                     "startColumnIndex": 0,
                     "endColumnIndex": 8
                 },
@@ -2489,11 +2489,11 @@ def generate_report(
         # 1번 섹션 A14:G30 => row=13..30, col=0..7
         add_dotted_borders(13, row_cursor_sum1, 1, 7)
         # 2번 섹션 
-        add_dotted_borders(row_cursor_album-1, row_cursor_sum2-1, 1, 7)
+        add_dotted_borders(row_cursor_album, row_cursor_sum2, 1, 7)
         # 3번 섹션 
-        add_dotted_borders(row_cursor_deduction-1, row_cursor_sum3-1, 1, 7)
+        add_dotted_borders(row_cursor_deduction, row_cursor_sum3-1, 1, 7)
         # 4번 섹션 
-        add_dotted_borders(row_cursor_rate-1, row_cursor_sum4, 1, 7)
+        add_dotted_borders(row_cursor_rate, row_cursor_sum4+1, 1, 7)
         
 
         # (P) 시트 외곽 검정 SOLID 
@@ -2502,7 +2502,7 @@ def generate_report(
                 "range": {
                     "sheetId": ws_report_id,
                     "startRowIndex": 0,
-                    "endRowIndex": row_cursor_report_end-1,
+                    "endRowIndex": row_cursor_report_end,
                     "startColumnIndex": 0,
                     "endColumnIndex": 8
                 },
