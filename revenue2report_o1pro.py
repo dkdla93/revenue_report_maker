@@ -234,7 +234,7 @@ def section_zero_prepare_song_cost():
         start_row = 2  # 시트상 2행부터 데이터(헤더가 1행)
         end_row   = 1 + total_rows  # 2행 + (total_rows - 1)
 
-        range_notation = f"D{start_row}:F{end_row-1}"
+        range_notation = f"D{start_row}:F{end_row}"
 
 
         # 3) batch_update() 호출
