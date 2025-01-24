@@ -1279,6 +1279,7 @@ def generate_report(
             report_matrix[row_cursor][6] = to_currency(rv)
             row_cursor += 1
 
+        row_cursor += 2
         # 합계
         report_matrix[row_cursor][1] = "합계"
         report_matrix[row_cursor][6] = to_currency(sum_1)
@@ -1304,6 +1305,7 @@ def generate_report(
             report_matrix[row_cursor][6] = to_currency(amt)
             row_cursor += 1
 
+        row_cursor += 2
         report_matrix[row_cursor][1] = "합계"
         report_matrix[row_cursor][6] = to_currency(sum_2)
         row_cursor_sum2 = row_cursor
