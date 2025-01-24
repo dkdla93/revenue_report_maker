@@ -1284,7 +1284,7 @@ def generate_report(
         report_matrix[row_cursor-1][1] = "합계"
         report_matrix[row_cursor-1][6] = to_currency(sum_1)
         row_cursor_sum1 = row_cursor
-        row_cursor += 2
+        row_cursor += 1
 
         # -----------------------------------------------------------------
         # 2. 앨범 별 정산 내역
@@ -1309,7 +1309,7 @@ def generate_report(
         report_matrix[row_cursor-1][1] = "합계"
         report_matrix[row_cursor-1][6] = to_currency(sum_2)
         row_cursor_sum2 = row_cursor
-        row_cursor += 2
+        row_cursor += 1
 
         # -----------------------------------------------------------------
         # 3. 공제 내역
