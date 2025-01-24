@@ -233,8 +233,9 @@ def section_zero_prepare_song_cost():
         #      row_idx=(N-1) → 시트의 (N+1)행
         start_row = 2  # 시트상 2행부터 데이터(헤더가 1행)
         end_row   = 1 + total_rows  # 2행 + (total_rows - 1)
-        range_notation = f"{ws_new.title}!D{start_row}:F{end_row}"
 
+        sheet_title_clean = ws_new.title.replace("'", "") 
+        range_notation = f"'{sheet_title_clean}'!D{start_row}:F{end_row}"
 
 
         # 3) batch_update() 호출
