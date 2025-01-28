@@ -213,8 +213,18 @@ def section_zero_prepare_song_cost():
                 updated_vals_for_def.append(["", "", ""])
                 continue
 
+
+            # 직전달 '당월 잔액' dict에서 가져오되, 없으면 0
             old_prev_val = prev_remain_dict.get(artist_n, 0.0)
-            curr_val = 0  # 당월발생액
+            
+            # (수정) 이번 달 시트의 '당월 발생액'을 직접 읽어서 사용
+            try:
+                curr_val_str = row_data[idx_curr_n].replace(",", "")
+                curr_val = float(curr_val_str) if curr_val_str else 0.0
+            except:
+                curr_val = 0.0
+
+            # 아티스트별 매출합
             rev_sum = sum_revenue_dict.get(artist_n, 0.0)
 
             # min(전월+당월발생, 매출합)
