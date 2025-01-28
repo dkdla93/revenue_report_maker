@@ -6,6 +6,7 @@ import time
 import io
 import zipfile
 import requests as req
+import unicodedata
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -54,8 +55,35 @@ def get_credentials_from_secrets(which: str = "A") -> Credentials:
 
 
 # ----------------------------------------------------------------
-# 검증(비교) 관련 헬퍼
+# 검증(비교) 및 기타 헬퍼
 # ----------------------------------------------------------------
+
+def clean_artist_name(raw_name: str) -> str:
+    """
+    아티스트명 문자열 내 숨겨진 기호/제로폭 스페이스/특수문자 등을 제거하고,
+    유니코드 정규화(NFKC) 후 strip() 하는 헬퍼 함수
+    """
+    if not raw_name:
+        return ""
+
+    # 1) 유니코드 정규화: 'NFKC' 형식으로 변환 (예: 반각/전각 혼용 제거 등)
+    normalized = unicodedata.normalize('NFKC', raw_name)
+
+    # 2) 정규식으로 "제로폭 문자(Zero Width Space)", BOM, etc. 제거
+    #   - \u200B ~ \u200F, \uFEFF 등이 종종 문제를 일으킴
+    #   - 아래 예시에서는 \u200B-\u200D, \uFEFF만 제거하지만,
+    #     필요에 따라 다른 숨겨진 기호(예: \u200E,\u200F 등)도 추가 가능
+    cleaned = re.sub(r'[\u200B-\u200D\uFEFF]', '', normalized)
+
+    # 3) 기타 공백문자(예: \xa0 = non-breaking space, \u3000 = 전각공백) 제거/치환
+    #   - \xa0을 일반 공백(" ")으로 치환한 뒤, 최종적으로 strip()
+    #   - \u3000(전각 스페이스)도 동일 처리
+    cleaned = cleaned.replace('\xa0',' ').replace('\u3000',' ')
+
+    # 4) 앞뒤 공백 제거
+    cleaned = cleaned.strip()
+
+    return cleaned
 
 def show_detailed_verification():
     check_dict = st.session_state.get("check_dict", {})
@@ -467,7 +495,7 @@ def section_zero_prepare_song_cost():
 
         prev_remain_dict = {}
         for row_p in body_prev:
-            artist = row_p[idx_artist_p].strip()
+            artist = clean_artist_name(row_p[idx_artist_p])
             if not artist or artist in ("합계", "총계"):
                 continue
             try:
@@ -524,7 +552,7 @@ def section_zero_prepare_song_cost():
         
         sum_umag_dict = defaultdict(float)
         for row_u in body_umag:
-            a = row_u[col_artist_umag].strip()
+            a = clean_artist_name(row_u[col_artist_umag])
             if not a:
                 continue
             try:
@@ -554,7 +582,7 @@ def section_zero_prepare_song_cost():
 
         sum_flux_song_dict = defaultdict(float)
         for row_fs in body_fs:
-            a = row_fs[col_artist_fs].strip()
+            a = clean_artist_name(row_fs[col_artist_fs])
             if not a:
                 continue
             try:
@@ -584,7 +612,7 @@ def section_zero_prepare_song_cost():
 
         sum_flux_yt_dict = defaultdict(float)
         for row_fy in body_fy:
-            a = row_fy[col_artist_fy].strip()
+            a = clean_artist_name(row_fy[col_artist_fy])
             if not a:
                 continue
             try:
@@ -600,7 +628,7 @@ def section_zero_prepare_song_cost():
         double_sosok_artists = []  # 2개 소속 중복된 아티스트 기록
 
         for row_idx, row_data in enumerate(body_new):
-            artist_n = row_data[idx_artist_n].strip()
+            artist_n = clean_artist_name(row_data[idx_artist_n])
             sosok_n  = row_data[idx_sosok_n].strip().upper()  # 예: "UMAG" / "FLUXUS" / ...
             if not artist_n or artist_n in ("합계","총계"):
                 updated_vals_for_def.append(["","",""])  # 전월, 당월발생, 당월차감 공란
@@ -1013,6 +1041,7 @@ def generate_report(
     double_sosok_list = []
     for row in body_sc:
         a = row[idx_artist].strip()
+        a = clean_artist_name(row[idx_artist])
         if not a or a in ("합계","총계"):
             continue
         s = row[idx_sosok].strip().upper()
