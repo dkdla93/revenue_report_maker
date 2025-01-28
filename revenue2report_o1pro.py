@@ -494,8 +494,8 @@ def section_zero_prepare_song_cost():
 
         # 필수 칼럼
         try:
-            idx_artist_n = header_new.index("아티스트명")
             idx_sosok_n  = header_new.index("소속")  # <--- 새로 추가(가정): "UMAG"/"FLUXUS" 중 하나
+            idx_artist_n = header_new.index("아티스트명")
             idx_prev_n   = header_new.index("전월 잔액")
             idx_curr_n   = header_new.index("당월 발생액")
             idx_ded_n    = header_new.index("당월 차감액")
@@ -649,7 +649,7 @@ def section_zero_prepare_song_cost():
         total_rows = len(body_new)
         start_row = 2
         end_row = 1 + total_rows
-        range_notation = f"D{start_row}:F{end_row}"
+        range_notation = f"E{start_row}:G{end_row}"
         requests_body = [
             {
                 "range": range_notation,
