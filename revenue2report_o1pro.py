@@ -213,7 +213,6 @@ def section_zero_prepare_song_cost():
                 updated_vals_for_def.append(["", "", ""])
                 continue
 
-
             # 직전달 '당월 잔액' dict에서 가져오되, 없으면 0
             old_prev_val = prev_remain_dict.get(artist_n, 0.0)
             
