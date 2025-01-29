@@ -694,15 +694,16 @@ def section_zero_prepare_song_cost():
 
         # 곡비파일(body_new)에서 소속을 보고 카운팅
         for row_data in body_new:
-            sosok_n = row_data[idx_sosok_n].strip().upper()
-            if not sosok_n: 
-                continue
-            if sosok_n == "UMAG":
+            sosok_str = row_data[idx_sosok_n].strip().upper()
+            splitted = re.split(r'[,&/]', sosok_str)
+            splitted = [x.strip() for x in splitted if x.strip()]
+
+            # 소속 문자열 안에 "UMAG"가 있으면 UMAG 카운트
+            if "UMAG" in splitted:
                 umag_count_artists += 1
-            elif sosok_n == "FLUXUS":
-                fluxus_count_artists += 1
-            elif sosok_n == "UMAG, FLUXUS":
-                umag_count_artists += 1
+
+            # 소속 문자열 안에 "FLUXUS"가 있으면 FLUXUS 카운트
+            if "FLUXUS" in splitted:
                 fluxus_count_artists += 1
 
         # 매출 인풋파일들의 "원본" 행 개수
@@ -731,8 +732,17 @@ def section_zero_prepare_song_cost():
 
         for row_data in body_new:
             artist_n = clean_artist_name(row_data[idx_artist_n])
-            if not artist_n or artist_n in ("합계","총계"):
-                continue
+            sosok_str = row_data[idx_sosok_n].strip().upper()
+            splitted = re.split(r'[,&/]', sosok_str)
+            splitted = [x.strip() for x in splitted if x.strip()]
+
+            # 소속 중에 UMAG가 하나라도 있으면 => umag_artists_from_cost.add(artist_n)
+            if "UMAG" in splitted:
+                umag_artists_from_cost.add(artist_n)
+
+            # 소속 중에 FLUXUS가 하나라도 있으면 => fluxus_artists_from_cost.add(artist_n)
+            if "FLUXUS" in splitted:
+                fluxus_artists_from_cost.add(artist_n)
 
 
         # 2) UMAG 인풋파일 '누락행' 탐색
