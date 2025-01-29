@@ -672,15 +672,22 @@ def section_zero_prepare_song_cost():
                 curr_val = 0.0
 
             # '소속' 검사
-            #  - UMAG or FLUXUS 중 1개만이어야 함
-            #  - 2개이상 or 알수없는 값 => 스킵
             splitted = re.split(r'[,&/]', sosok_n)  # 예: "UMAG,FLUXUS" 등
             splitted = [x.strip() for x in splitted if x.strip()]
-            if len(splitted) > 1:
-                # 2개 이상 소속
-                double_sosok_artists.append(artist_n)
-                updated_vals_for_def.append([prev_val, curr_val, ""])
-                continue
+
+
+            # (수정된) 소속이 여러 개면 => 각 소속의 매출을 모두 더함
+            total_revenue = 0.0
+            for one_s in splitted:
+                if one_s == "UMAG":
+                    total_revenue += sum_umag_dict.get(artist_n, 0.0)
+                elif one_s == "FLUXUS":
+                    fs_val = sum_flux_song_dict.get(artist_n, 0.0)
+                    fy_val = sum_flux_yt_dict.get(artist_n, 0.0)
+                    total_revenue += (fs_val + fy_val)
+                # else:
+                #    pass
+
 
             # 매출합
             if sosok_n == "UMAG":
@@ -808,7 +815,7 @@ def section_zero_prepare_song_cost():
                     "row_idx": i,
                     "raw_artist": raw_artist,
                     "cleaned_artist": cleaned_a,
-                    "reason": "곡비 FLUXUS에 없음"
+                    "reason": "곡비파일에 아티스트 없음(FLUXUS_SONG)"
                 })
 
         # 4) fluxus_yt 누락행
@@ -824,7 +831,7 @@ def section_zero_prepare_song_cost():
                     "row_idx": i,
                     "raw_artist": raw_artist,
                     "cleaned_artist": cleaned_a,
-                    "reason": "곡비 FLUXUS에 없음"
+                    "reason": "곡비파일에 아티스트 없음(FLUXUS_YT)"
                 })
 
         st.session_state["missing_rows"] = {
@@ -1287,36 +1294,40 @@ def generate_report(
         st.error("곡비시트에 필요한 칼럼(소속, 전월 잔액 등)이 없습니다.")
         return ""
 
-    # artist_cost_dict: { artist: {sosok, 전월잔액, 당월발생, 당월차감, 당월잔액, 정산요율} }
+    # ----------------
+    # B) 곡비 dictionary 구성
+    # ----------------
+    # artist_cost_dict: {artist_name: {sosok: "...", prev, curr, deduct, remain, rate}}
+    # 소속이 "UMAG, FLUXUS" 등으로 콤마&스페이스 연결되어 있을 수 있음(이제 skip 안 함)
     artist_cost_dict = {}
-    double_sosok_list = []
     for row in body_sc:
-        a = row[idx_artist].strip()
-        a = clean_artist_name(row[idx_artist])
-        if not a or a in ("합계","총계"):
+        raw_artist = row[idx_artist]
+        artist = clean_artist_name(raw_artist)
+        if not artist or artist in ("합계","총계"):
             continue
-        s = row[idx_sosok].strip().upper()
-        splitted = re.split(r'[,&/]', s)
-        splitted = [x.strip() for x in splitted if x.strip()]
-        if len(splitted)>1:
-            double_sosok_list.append(a)
-            continue
-        # 숫자 변환
-        def num(x):
-            if not x: return 0.0
+
+        raw_sosok = row[idx_sosok].strip().upper()
+        # splitted = re.split(r'[,&/]', raw_sosok)  # <= 여러 소속
+        # => 지금 단계에서는 그냥 raw_sosok를 저장 (나중 split)
+        # => 보고서 생성 시점에 split하여 다중 보고서 생성
+
+        def numconv(x):
+            if not x:
+                return 0.0
             return float(x.replace(",","").replace("%",""))
-        artist_cost_dict[a] = {
-            "sosok": s,
-            "prev": num(row[idx_prev]),
-            "curr": num(row[idx_curr]),
-            "deduct": num(row[idx_deduct]),
-            "remain": num(row[idx_remain]),
-            "rate": num(row[idx_rate])
+
+        artist_cost_dict[artist] = {
+            "sosok": raw_sosok,
+            "prev": numconv(row[idx_prev]),
+            "curr": numconv(row[idx_curr]),
+            "deduct": numconv(row[idx_deduct]),
+            "remain": numconv(row[idx_remain]),
+            "rate": numconv(row[idx_rate])
         }
 
-    # (옵션) double 소속 안내
-    if double_sosok_list:
-        st.warning(f"2개 소속(중복) 아티스트: {double_sosok_list}")
+    all_artists = sorted(artist_cost_dict.keys())
+
+
 
     # 2) 각 인풋파일에서 매출 읽기 (UMAG vs FLUXUS)
     # ... (생략) => 여기서는 "세부매출" dict 가 있다고 가정
@@ -1342,104 +1353,143 @@ def generate_report(
     progress_bar.progress(0.0)
     artist_placeholder.info("생성 중...")
 
-    # 시트 미리 생성
+    # **주의**: 소속이 여러 개인 경우 => 아티스트1 + 소속N => N*2개의 탭 필요
+    # 시트 생성 전, "needed_titles" 미리 모으기
     needed_titles = []
     for a in all_artists:
-        # double소속은 제외
-        if a in double_sosok_list:
+        raw_sosok = artist_cost_dict[a]["sosok"]
+        splitted = re.split(r'[,&/]', raw_sosok)
+        splitted = [x.strip() for x in splitted if x.strip()]
+        if not splitted:
+            # 소속 없는 경우 skip or 임의처리
             continue
-        needed_titles.append(f"{a}(세부매출내역)")
-        needed_titles.append(f"{a}(정산서)")
+        for one_sosok in splitted:
+            # UMAG / FLUXUS / 기타
+            if one_sosok not in ("UMAG","FLUXUS"):
+                # pass or skip
+                continue
+
+            # 탭 이름:
+            # (세부매출_{one_sosok})
+            detail_title = f"{a}(세부매출_{one_sosok})"
+            # (정산서_{one_sosok})
+            report_title = f"{a}(정산서_{one_sosok})"
+
+            needed_titles.append(detail_title)
+            needed_titles.append(report_title)
+
+    # 시트 생성
     batch_add_sheets(out_file_id, sheet_svc, needed_titles)
 
-    # 아티스트별 시트 채우기
-    # (FLUXUS vs UMAG) 에 따라 컬럼 구성 다르게
-    requests_batch = []
+
+
+    # ----------------
+    # E) 아티스트별로 보고서 생성 (소속수만큼 반복)
+    # ----------------
     for i, artist in enumerate(all_artists):
         ratio = (i+1)/len(all_artists)
         progress_bar.progress(ratio)
-        artist_placeholder.info(f"[{i+1}/{len(all_artists)}] {artist} 처리 중...")
+        artist_placeholder.info(f"[{i+1}/{len(all_artists)}] '{artist}' 처리 중...")
 
-        if artist in double_sosok_list:
+        raw_sosok = artist_cost_dict[artist]["sosok"]
+        splitted_sosok = re.split(r'[,&/]', raw_sosok)
+        splitted_sosok = [x.strip() for x in splitted_sosok if x.strip()]
+
+        if not splitted_sosok:
+            # 소속없음
             continue
 
-        # 소속
-        sosok = artist_cost_dict[artist]["sosok"]
-        if sosok!="UMAG" and sosok!="FLUXUS":
-            # 알수없는 소속 => 스킵
-            continue
+        for one_sosok in splitted_sosok:
+            # UMAG or FLUXUS or etc
+            if one_sosok not in ("UMAG","FLUXUS"):
+                # skip or pass
+                continue
 
-        # 세부매출
-        detail_rows = artist_revenue_dict[artist]  # 실제로는 2개 파일에서 합친 결과
-        # 정렬
-        detail_rows_sorted = sorted(detail_rows, key=lambda x: x.get("album",""))
+            # (1) 세부매출내역 탭
+            ws_detail_name = f"{artist}(세부매출_{one_sosok})"
+            try:
+                ws_detail = out_sh.worksheet(ws_detail_name)
+            except:
+                # 만약 탭이 없으면 skip or pass
+                continue
 
-        # 3-A) "세부매출내역" 탭
-        ws_name_detail = f"{artist}(세부매출내역)"
-        ws_detail = out_sh.worksheet(ws_name_detail)
-        sheet_id_detail = ws_detail.id
+            detail_rows = artist_revenue_dict[artist]  # 이 아티스트의 모든 매출(가정)
+            # UMAG vs FLUXUS => 표 구성 달리
+            if one_sosok=="UMAG":
+                # UMAG 스타일
+                matrix_detail = []
+                matrix_detail.append(["앨범아티스트","앨범명","대분류","중분류","서비스명","기간","매출 순수익"])
+                total_sum = 0
+                for rowdata in detail_rows:
+                    rv = rowdata.get("revenue",0)
+                    total_sum += rv
+                    matrix_detail.append([
+                        artist,
+                        rowdata.get("album",""),
+                        rowdata.get("major",""),
+                        rowdata.get("middle",""),
+                        rowdata.get("service",""),
+                        f"{ym[:4]}년 {ym[4:]}월",
+                        f"{rv:,.0f}"
+                    ])
+                matrix_detail.append(["합계","","","","","", f"{total_sum:,.0f}"])
+            else:
+                # FLUXUS 스타일
+                matrix_detail = []
+                matrix_detail.append(["앨범아티스트","앨범명","트랙 No.","트랙명","매출 순수익"])
+                total_sum = 0
+                for rowdata in detail_rows:
+                    rv = rowdata.get("revenue",0)
+                    total_sum += rv
+                    matrix_detail.append([
+                        artist,
+                        rowdata.get("album",""),
+                        rowdata.get("trackNo",""),
+                        rowdata.get("trackTitle",""),
+                        f"{rv:,.0f}"
+                    ])
+                matrix_detail.append(["합계","","","", f"{total_sum:,.0f}"])
 
-        if sosok=="UMAG":
-            # 기존 방식: [앨범아티스트, 앨범명, 대분류, 중분류, 서비스명, 기간, 매출순수익]
-            matrix_detail = []
-            matrix_detail.append(["앨범아티스트","앨범명","대분류","중분류","서비스명","기간","매출 순수익"])
-            total_sum = 0
-            for d in detail_rows_sorted:
-                # major, middle, service
-                rv = d.get("revenue",0)
-                total_sum += rv
-                matrix_detail.append([
-                    artist,
-                    d.get("album",""),
-                    d.get("major",""),
-                    d.get("middle",""),
-                    d.get("service",""),
-                    f"{ym[:4]}년 {ym[4:]}월",
-                    f"{rv:,.0f}"
-                ])
-            matrix_detail.append(["합계","","","","","", f"{total_sum:,.0f}"])
+            ws_detail.update("A1", matrix_detail)
+            time.sleep(0.2)
 
-        else:
-            # FLUXUS 형식: [앨범아티스트, 앨범명, '트랙 No.', '트랙명', '매출 순수익']
-            # 삭제: 대분류/중분류/서비스명
-            # 추가: 트랙 No, 트랙명
-            matrix_detail = []
-            matrix_detail.append(["앨범아티스트","앨범명","트랙 No.","트랙명","매출 순수익"])
-            total_sum = 0
-            for d in detail_rows_sorted:
-                rv = d.get("revenue",0)
-                total_sum += rv
-                matrix_detail.append([
-                    artist,
-                    d.get("album",""),
-                    d.get("trackNo",""),
-                    d.get("trackTitle",""),
-                    f"{rv:,.0f}"
-                ])
-            matrix_detail.append(["합계","","","", f"{total_sum:,.0f}"])
+            # (2) 정산서 탭
+            ws_report_name = f"{artist}(정산서_{one_sosok})"
+            try:
+                ws_report = out_sh.worksheet(ws_report_name)
+            except:
+                continue
 
-        ws_detail.update("A1", matrix_detail)
-        time.sleep(0.5)
+            # ex) 곡비 = (prev+curr), 공제액 = deduct
+            cost_data = artist_cost_dict[artist]
+            prev_val = cost_data["prev"]
+            curr_val = cost_data["curr"]
+            deduct_val = cost_data["deduct"]
+            remain_val = cost_data["remain"]
+            rate_val = cost_data["rate"]
+            # ...
+            # UMAG vs FLUXUS 보고서 서식 조금 다름
+            # 간략 예시
+            if one_sosok=="UMAG":
+                # UMAG 형식
+                matrix_report = [
+                    ["아티스트:", artist, "", "", "", ""],
+                    ["소속(UMAG)", "", "", "", "", ""],
+                    ["전월+당월", prev_val+curr_val,"공제액",deduct_val,"남은곡비",remain_val],
+                    ["정산요율", f"{rate_val}%", "", "", "", ""]
+                ]
+            else:
+                # FLUXUS 형식
+                matrix_report = [
+                    ["아티스트:", artist, "", "", "", ""],
+                    ["소속(FLUXUS)", "", "", "", "", ""],
+                    ["전월+당월", prev_val+curr_val,"공제액",deduct_val,"남은곡비",remain_val],
+                    ["정산요율", f"{rate_val}%", "", "", "", ""]
+                ]
 
-        # (서식, 테두리 등) -> 생략 or requests_batch.append(...)
-        # ...
+            ws_report.update("A1", matrix_report)
+            time.sleep(0.2)
 
-        # 3-B) "정산서" 탭
-        ws_name_report = f"{artist}(정산서)"
-        ws_report = out_sh.worksheet(ws_name_report)
-        sheet_id_report = ws_report.id
-
-        # 곡비 = 전월+당월, 공제액 = ...
-        # (UMAG vs FLUXUS) "음원 서비스별 정산내역" 칼럼 달라짐
-        # ...
-        # [생략 - 위와 유사]
-        # ws_report.update("A1", some_matrix)
-        # ...
-
-        time.sleep(0.5)
-
-    # batchUpdate all_requests (생략)
-    # ...
 
     # 모두 완료
     artist_placeholder.success("모든 아티스트 처리 완료!")
