@@ -576,6 +576,10 @@ def section_zero_prepare_song_cost():
                 val = 0.0
             sum_umag_dict[a] += val
 
+        # (추가) UMAG 인풋파일에서 '누락 행'을 기록할 리스트
+        missing_umag_rows = []
+
+
         # ---------------------------
         # 0-D) FLUXUS(song) 매출 dict
         # ---------------------------
@@ -606,6 +610,10 @@ def section_zero_prepare_song_cost():
                 val = 0.0
             sum_flux_song_dict[a] += val
 
+        # (추가) fluxus_song 인풋파일에서 '누락 행' 기록
+        missing_flux_song_rows = []
+
+
         # ---------------------------
         # 0-E) FLUXUS(yt) 매출 dict
         # ---------------------------
@@ -635,6 +643,10 @@ def section_zero_prepare_song_cost():
             except:
                 val = 0.0
             sum_flux_yt_dict[a] += val
+
+        # (추가) fluxus_yt 인풋파일에서 '누락 행' 기록
+        missing_flux_yt_rows = []
+
 
         # ---------------------------------------
         # 0-F) batch_update 준비
@@ -705,7 +717,7 @@ def section_zero_prepare_song_cost():
         if double_sosok_artists:
             msg = f"2개 소속이 중복되어 작업에서 제외된 아티스트: {double_sosok_artists}"
             st.warning(msg)
- 
+
 
         #--------------------------------
         # 아티스트 수 검증
@@ -762,6 +774,65 @@ def section_zero_prepare_song_cost():
                     umag_artists_from_cost.add(artist_n)
                 elif splitted[0] == "FLUXUS":
                     fluxus_artists_from_cost.add(artist_n)
+
+
+        # 2) UMAG 인풋파일 '누락행' 탐색
+        missing_umag_rows = []
+        umag_processed_rows = 0
+
+        for i, row_u in enumerate(body_umag):
+            raw_artist = row_u[col_artist_umag]
+            cleaned_a = clean_artist_name(raw_artist)
+            if cleaned_a in umag_artists_from_cost:
+                # 처리됨
+                umag_processed_rows += 1
+            else:
+                # 누락
+                missing_umag_rows.append({
+                    "row_idx": i,
+                    "raw_artist": raw_artist,
+                    "cleaned_artist": cleaned_a,
+                    "reason": "곡비 UMAG에 없음 (or 중복소속)"
+                })
+
+        # 3) fluxus_song 누락행
+        missing_flux_song_rows = []
+        fluxus_song_processed_rows = 0
+        for i, row_fs in enumerate(body_fs):
+            raw_artist = row_fs[col_artist_fs]
+            cleaned_a = clean_artist_name(raw_artist)
+            if cleaned_a in fluxus_artists_from_cost:
+                fluxus_song_processed_rows += 1
+            else:
+                missing_flux_song_rows.append({
+                    "row_idx": i,
+                    "raw_artist": raw_artist,
+                    "cleaned_artist": cleaned_a,
+                    "reason": "곡비 FLUXUS에 없음"
+                })
+
+        # 4) fluxus_yt 누락행
+        missing_flux_yt_rows = []
+        fluxus_yt_processed_rows = 0
+        for i, row_fy in enumerate(body_fy):
+            raw_artist = row_fy[col_artist_fy]
+            cleaned_a = clean_artist_name(raw_artist)
+            if cleaned_a in fluxus_artists_from_cost:
+                fluxus_yt_processed_rows += 1
+            else:
+                missing_flux_yt_rows.append({
+                    "row_idx": i,
+                    "raw_artist": raw_artist,
+                    "cleaned_artist": cleaned_a,
+                    "reason": "곡비 FLUXUS에 없음"
+                })
+
+        st.session_state["missing_rows"] = {
+            "UMAG": missing_umag_rows,
+            "FLUXUS_SONG": missing_flux_song_rows,
+            "FLUXUS_YT": missing_flux_yt_rows
+        }
+
 
         # --------------------------------
         # B) 처리된 아티스트 수
@@ -842,7 +913,29 @@ def section_zero_prepare_song_cost():
             diff_flux_yt   = orig["매출액파일"]["FLUXUS_YT행개수"] - proc["매출액파일"]["FLUXUS_YT행개수"]
 
             if diff_umag_row!=0 or diff_flux_song!=0 or diff_flux_yt!=0:
-                st.warning(f"매출 데이터 행개수 차이 발생! UMAG {diff_umag_row}, FLUXUS_SONG {diff_flux_song}, FLUXUS_YT {diff_flux_yt}")
+                st.warning(f"매출 데이터 행개수 차이 발생! \nUMAG: {diff_umag_row}, \nFLUXUS_SONG: {diff_flux_song}, \nFLUXUS_YT: {diff_flux_yt}")
+                if "missing_rows" in st.session_state:
+                    missing_all = st.session_state["missing_rows"]
+
+                    # UMAG
+                    if missing_all["UMAG"]:
+                        st.write("#### UMAG 인풋 누락 행 목록")
+                        import pandas as pd
+                        df_umag_miss = pd.DataFrame(missing_all["UMAG"])
+                        st.dataframe(df_umag_miss)
+
+                    # FLUXUS_SONG
+                    if missing_all["FLUXUS_SONG"]:
+                        st.write("#### Fluxus Song 인풋 누락 행 목록")
+                        df_fs_miss = pd.DataFrame(missing_all["FLUXUS_SONG"])
+                        st.dataframe(df_fs_miss)
+                    
+                    # FLUXUS_YT
+                    if missing_all["FLUXUS_YT"]:
+                        st.write("#### Fluxus YT 인풋 누락 행 목록")
+                        df_fy_miss = pd.DataFrame(missing_all["FLUXUS_YT"])
+                        st.dataframe(df_fy_miss)
+
 
             st.write("----")
             st.write("**검증 요약**")
