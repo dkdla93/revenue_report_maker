@@ -565,8 +565,11 @@ def section_zero_prepare_song_cost():
         sum_umag_dict = defaultdict(float)
         for row_u in body_umag:
             a_u = clean_artist_name(row_u[col_artist_umag])
-            if not a_u:
+            # [1] 합계행 조건
+            if not a_u or a_u in ("합계","총계","TOTAL"):
+                # 이 행은 합계행 -> 스킵
                 continue
+
             try:
                 val_u = float(row_u[col_revenue_umag].replace(",",""))
             except:
@@ -597,8 +600,9 @@ def section_zero_prepare_song_cost():
         sum_flux_song_dict = defaultdict(float)
         for row_fs in body_fs:
             a_fs = clean_artist_name(row_fs[col_artist_fs])
-            if not a_fs:
+            if not a_fs or a_fs in ("합계","총계","TOTAL"):
                 continue
+
             try:
                 val_fs = float(row_fs[col_revenue_fs].replace(",",""))
             except:
@@ -629,8 +633,9 @@ def section_zero_prepare_song_cost():
         sum_flux_yt_dict = defaultdict(float)
         for row_fy in body_fy:
             a_fy = clean_artist_name(row_fy[col_artist_fy])
-            if not a_fy:
+            if not a_fy or a_fy in ("합계","총계","TOTAL"):
                 continue
+
             try:
                 val_fy = float(row_fy[col_revenue_fy].replace(",",""))
             except:
@@ -856,12 +861,23 @@ def section_zero_prepare_song_cost():
         #--------------------------------
         # 검증 결과 출력
         #--------------------------------
+        # 곡비파일 수정 완료 후 검증 결과를 보여주는 영역
+        st.write("### 검증 결과 요약")
+
+        tab_summary, tab_missing = st.tabs(["검증 요약","인풋 누락 행 목록"])
+
         if "verification_original" in st.session_state and "verification_processed" in st.session_state:
             orig = st.session_state["verification_original"]
             proc = st.session_state["verification_processed"]
 
-            # 예: 곡비파일 아티스트
-            st.write("### 곡비파일 아티스트 검증")
+        with tab_summary:    
+            # 여기서 곡비파일 아티스트 수 / 매출액 행 개수 비교
+            if diff_umag_artist==0 and diff_flux_artist==0 and diff_umag_row==0 and diff_flux_song==0 and diff_flux_yt==0:
+                st.success("원본과 처리 결과가 모두 일치합니다!")
+            else:
+                st.error("원본 vs 처리 결과에 차이가 있습니다. 아래와 상세탭에서 상세 누락 행을 확인해 주세요.")
+
+            st.write("#### 곡비파일 아티스트 검증")
             st.write(f"- (원본) UMAG: {orig['곡비파일']['UMAG_아티스트수']}, FLUXUS: {orig['곡비파일']['FLUXUS_아티스트수']}")
             st.write(f"- (처리) UMAG: {proc['곡비파일']['UMAG_아티스트수']}, FLUXUS: {proc['곡비파일']['FLUXUS_아티스트수']}")
 
@@ -872,8 +888,7 @@ def section_zero_prepare_song_cost():
             if diff_umag_artist != 0 or diff_flux_artist != 0:
                 st.warning(f"아티스트 수에 차이가 발생했습니다! (UMAG: {diff_umag_artist}, FLUXUS: {diff_flux_artist})")
 
-            # 매출액 인풋파일
-            st.write("### 매출액 행 개수 검증")
+            st.write("#### 매출액 행 개수 검증")
             st.write(f"- (원본) UMAG: {orig['매출액파일']['UMAG행개수']}, FLUXUS_SONG: {orig['매출액파일']['FLUXUS_SONG행개수']}, FLUXUS_YT: {orig['매출액파일']['FLUXUS_YT행개수']}")
             st.write(f"- (처리) UMAG: {proc['매출액파일']['UMAG행개수']}, FLUXUS_SONG: {proc['매출액파일']['FLUXUS_SONG행개수']}, FLUXUS_YT: {proc['매출액파일']['FLUXUS_YT행개수']}")
 
@@ -881,6 +896,11 @@ def section_zero_prepare_song_cost():
             diff_flux_song = orig["매출액파일"]["FLUXUS_SONG행개수"] - proc["매출액파일"]["FLUXUS_SONG행개수"]
             diff_flux_yt   = orig["매출액파일"]["FLUXUS_YT행개수"] - proc["매출액파일"]["FLUXUS_YT행개수"]
 
+            if diff_umag_row!=0 or diff_flux_song!=0 or diff_flux_yt!=0:
+                st.warning(f"매출 데이터 행개수 차이 발생! \nUMAG: {diff_umag_row}, \nFLUXUS_SONG: {diff_flux_song}, \nFLUXUS_YT: {diff_flux_yt}")
+
+        with tab_missing:
+            # 여기에서 UMAG / Fluxus Song / Fluxus YT ‘missing_rows’ 표
             if diff_umag_row!=0 or diff_flux_song!=0 or diff_flux_yt!=0:
                 st.warning(f"매출 데이터 행개수 차이 발생! \nUMAG: {diff_umag_row}, \nFLUXUS_SONG: {diff_flux_song}, \nFLUXUS_YT: {diff_flux_yt}")
                 if "missing_rows" in st.session_state:
@@ -904,15 +924,6 @@ def section_zero_prepare_song_cost():
                         st.write("#### Fluxus YT 인풋 누락 행 목록")
                         df_fy_miss = pd.DataFrame(missing_all["FLUXUS_YT"])
                         st.dataframe(df_fy_miss)
-
-
-            st.write("----")
-            st.write("**검증 요약**")
-            if diff_umag_artist==0 and diff_flux_artist==0 and diff_umag_row==0 and diff_flux_song==0 and diff_flux_yt==0:
-                st.success("원본과 처리 결과가 모두 일치합니다!")
-            else:
-                st.error("원본 vs 처리 결과에 차이가 있습니다. 아래에서 상세 누락 행을 확인해 주세요.")
-
 
         st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
         st.session_state["song_cost_prepared"] = True
