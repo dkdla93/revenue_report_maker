@@ -697,7 +697,7 @@ def section_zero_prepare_song_cost():
 
         raw = row_fs[col_artist_fs]
 
-        st.write("== Debug artist raw:", raw, "| hex=", debug_hex(raw))
+        st.write(f"== Debug artist raw: {raw} | hex: {debug_hex(raw)}")
 
         st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
         st.session_state["song_cost_prepared"] = True
