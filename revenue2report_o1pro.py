@@ -741,7 +741,6 @@ def section_zero_prepare_song_cost():
             }
         }
 
-
         # --------------------------------
         # A) 소속별 "아티스트 set" 구성
         # --------------------------------
@@ -828,12 +827,9 @@ def section_zero_prepare_song_cost():
 
             # 예: 매출액 인풋파일
             st.write("### 매출액 행 개수 검증")
-            st.write(f"- (원본) UMAG: {orig['매출액파일']['UMAG행개수']}")
-            st.write(f"- (처리) UMAG: {proc['매출액파일']['UMAG행개수']}")
-            # ...
-
-
-
+            st.write(f"- (원본) UMAG: {orig['매출액파일']['UMAG행개수']}, FLUXUS_SONG: {orig['매출액파일']['FLUXUS_SONG행개수']}, FLUXUS_YT: {orig['매출액파일']['FLUXUS_YT행개수']}")
+            st.write(f"- (처리) UMAG: {proc['매출액파일']['UMAG행개수']}, FLUXUS_SONG: {proc['매출액파일']['FLUXUS_SONG행개수']}, FLUXUS_YT: {proc['매출액파일']['FLUXUS_YT행개수']}")
+            
 
         st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
         st.session_state["song_cost_prepared"] = True
