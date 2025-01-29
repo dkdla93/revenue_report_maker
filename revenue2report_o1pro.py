@@ -71,6 +71,8 @@ def clean_artist_name(raw_name: str) -> str:
     4) strip()
     """
     import unicodedata
+    import re
+
     if not raw_name:
         return ""
 
@@ -81,7 +83,19 @@ def clean_artist_name(raw_name: str) -> str:
     no_ctrl = "".join(ch for ch in normalized if not unicodedata.category(ch).startswith("C"))
 
     # 3) 특수공백 치환 + strip
+    replaced = []
+    for ch in no_ctrl:
+        # ch가 Category=Z 공백인지
+        if unicodedata.category(ch).startswith("Z"):
+            replaced.append(" ")  # 전부 ' '로 치환
+        else:
+            replaced.append(ch)
+    no_ctrl = "".join(replaced)
+
+    # 4) 특수공백 치환
     no_ctrl = no_ctrl.replace('\xa0',' ').replace('\u3000',' ')
+
+    # 5) strip
     cleaned = no_ctrl.strip()
 
     return cleaned
