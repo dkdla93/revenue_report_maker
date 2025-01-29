@@ -777,9 +777,9 @@ def section_zero_prepare_song_cost():
 
             # 중복 소속은 이미 처리
             if len(splitted) == 1:
-                if splitted[0] == "UMAG":
+                if splitted[0] == "UMAG" or "UMAG, FLUXUS":
                     umag_artists_from_cost.add(artist_n)
-                elif splitted[0] == "FLUXUS":
+                elif splitted[0] == "FLUXUS" or "UMAG, FLUXUS":
                     fluxus_artists_from_cost.add(artist_n)
 
 
