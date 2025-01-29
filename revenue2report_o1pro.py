@@ -62,30 +62,27 @@ def debug_hex(s: str) -> str:
     """문자열 s의 각 문자를 유니코드 코드포인트(\\uXXXX) 형태로 변환."""
     return " ".join(f"\\u{ord(ch):04X}" for ch in s)
 
+
 def clean_artist_name(raw_name: str) -> str:
     """
-    아티스트명 문자열 내 숨겨진 기호/제로폭 스페이스/특수문자 등을 제거하고,
-    유니코드 정규화(NFKC) 후 strip() 하는 헬퍼 함수
+    1) 유니코드 정규화(NFKC)
+    2) 모든 제어문자(Category=C) 제거
+    3) \xa0, \u3000 같은 특수 공백 치환
+    4) strip()
     """
+    import unicodedata
     if not raw_name:
         return ""
 
-    # 1) 유니코드 정규화: 'NFKC' 형식으로 변환 (예: 반각/전각 혼용 제거 등)
+    # 1) 유니코드 정규화
     normalized = unicodedata.normalize('NFKC', raw_name)
 
-    # 2) 정규식으로 "제로폭 문자(Zero Width Space)", BOM, etc. 제거
-    #   - \u200B ~ \u200F, \uFEFF 등이 종종 문제를 일으킴
-    #   - 아래 예시에서는 \u200B-\u200D, \uFEFF만 제거하지만,
-    #     필요에 따라 다른 숨겨진 기호(예: \u200E,\u200F 등)도 추가 가능
-    cleaned = re.sub(r'[\u200B-\u200D\uFEFF]', '', normalized)
+    # 2) "모든 제어문자" 제거 (제어문자: Cc, Cf, Cs, Co, Cn 등)
+    no_ctrl = "".join(ch for ch in normalized if not unicodedata.category(ch).startswith("C"))
 
-    # 3) 기타 공백문자(예: \xa0 = non-breaking space, \u3000 = 전각공백) 제거/치환
-    #   - \xa0을 일반 공백(" ")으로 치환한 뒤, 최종적으로 strip()
-    #   - \u3000(전각 스페이스)도 동일 처리
-    cleaned = cleaned.replace('\xa0',' ').replace('\u3000',' ')
-
-    # 4) 앞뒤 공백 제거
-    cleaned = cleaned.strip()
+    # 3) 특수공백 치환 + strip
+    no_ctrl = no_ctrl.replace('\xa0',' ').replace('\u3000',' ')
+    cleaned = no_ctrl.strip()
 
     return cleaned
 
@@ -697,7 +694,7 @@ def section_zero_prepare_song_cost():
 
         raw = row_fs[col_artist_fs]
 
-        st.write(f"== Debug artist raw: {raw} | hex: {debug_hex(raw)}")
+        st.success(f"== Debug artist raw: {raw} | hex: {debug_hex(raw)}")
 
         st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
         st.session_state["song_cost_prepared"] = True
