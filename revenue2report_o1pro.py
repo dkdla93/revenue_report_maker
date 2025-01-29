@@ -777,10 +777,15 @@ def section_zero_prepare_song_cost():
 
             # 중복 소속은 이미 처리
             if len(splitted) == 1:
-                if splitted[0] == "UMAG" or "UMAG, FLUXUS":
+                if splitted[0] == "UMAG":
                     umag_artists_from_cost.add(artist_n)
-                elif splitted[0] == "FLUXUS" or "UMAG, FLUXUS":
+                elif splitted[0] == "FLUXUS":
                     fluxus_artists_from_cost.add(artist_n)
+            elif len(splitted) == 2:
+                if splitted[0] == "UMAG, FLUXUS":
+                    umag_artists_from_cost.add(artist_n)
+                    fluxus_artists_from_cost.add(artist_n)
+                    
 
 
         # 2) UMAG 인풋파일 '누락행' 탐색
