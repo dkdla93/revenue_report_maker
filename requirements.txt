@@ -7,4 +7,3 @@ google-api-python-client
 gspread-formatting
 requests
 openpyxl
-unicodedata
