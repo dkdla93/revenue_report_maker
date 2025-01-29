@@ -685,6 +685,8 @@ def section_zero_prepare_song_cost():
                     fs_val = sum_flux_song_dict.get(artist_n, 0.0)
                     fy_val = sum_flux_yt_dict.get(artist_n, 0.0)
                     total_revenue += (fs_val + fy_val)
+                elif one_s == "UMAG, FLUXUS":
+                    total_revenue += (sum_umag_dict.get(artist_n, 0.0) + fs_val + fy_val)  # 소속이 2개인 경우
                 # else:
                 #    pass
 
@@ -697,6 +699,8 @@ def section_zero_prepare_song_cost():
                 fs_val = sum_flux_song_dict.get(artist_n, 0.0)
                 fy_val = sum_flux_yt_dict.get(artist_n, 0.0)
                 total_revenue = fs_val + fy_val
+            elif sosok_n == "UMAG, FLUXUS":
+                total_revenue = (sum_umag_dict.get(artist_n, 0.0) + fs_val + fy_val)
             else:
                 # 알수없는 소속이거나 공란 => 스킵
                 updated_vals_for_def.append([prev_val, curr_val, ""])
@@ -740,6 +744,9 @@ def section_zero_prepare_song_cost():
             if sosok_n == "UMAG":
                 umag_count_artists += 1
             elif sosok_n == "FLUXUS":
+                fluxus_count_artists += 1
+            elif sosok_n == "UMAG, FLUXUS":
+                umag_count_artists += 1
                 fluxus_count_artists += 1
 
         # 매출 인풋파일들의 "원본" 행 개수
