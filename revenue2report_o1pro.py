@@ -58,6 +58,10 @@ def get_credentials_from_secrets(which: str = "A") -> Credentials:
 # 검증(비교) 및 기타 헬퍼
 # ----------------------------------------------------------------
 
+def debug_hex(s: str) -> str:
+    """문자열 s의 각 문자를 유니코드 코드포인트(\\uXXXX) 형태로 변환."""
+    return " ".join(f"\\u{ord(ch):04X}" for ch in s)
+
 def clean_artist_name(raw_name: str) -> str:
     """
     아티스트명 문자열 내 숨겨진 기호/제로폭 스페이스/특수문자 등을 제거하고,
@@ -690,6 +694,9 @@ def section_zero_prepare_song_cost():
         if double_sosok_artists:
             msg = f"2개 소속이 중복되어 작업에서 제외된 아티스트: {double_sosok_artists}"
             st.warning(msg)
+
+        raw = row_fs[col_artist_fs]
+        print("== Debug artist raw:", raw, "| hex=", debug_hex(raw))
 
         st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
         st.session_state["song_cost_prepared"] = True
