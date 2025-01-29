@@ -413,11 +413,11 @@ def update_next_month_tab(song_cost_sh, ym: str):
     # batch_update에 쓸 requests
     requests_body = [
         {
-            "range": f"D{start_row}:D{end_row}",
+            "range": f"F{start_row}:F{end_row}",
             "values": updated_prev_vals
         },
         {
-            "range": f"F{start_row}:F{end_row}",
+            "range": f"G{start_row}:G{end_row}",
             "values": updated_deduct_vals
         }
     ]
@@ -706,42 +706,139 @@ def section_zero_prepare_song_cost():
             msg = f"2개 소속이 중복되어 작업에서 제외된 아티스트: {double_sosok_artists}"
             st.warning(msg)
  
-        # 디버깅용: 모든 아티스트 출력
-        for i, row_fs in enumerate(body_fs):
-            raw = row_fs[col_artist_fs]
-            debugged = debug_hex(raw)
-            st.write(f"[fluxus_song1] row={i}, raw='{raw}', hex={debugged}")
 
-            a = clean_artist_name(raw)
-            if not a:
+        #--------------------------------
+        # 아티스트 수 검증
+        #--------------------------------
+        umag_count_artists = 0
+        fluxus_count_artists = 0
+
+        # 곡비파일(body_new)에서 소속을 보고 카운팅
+        for row_data in body_new:
+            sosok_n = row_data[idx_sosok_n].strip().upper()
+            if not sosok_n: 
+                continue
+            if sosok_n == "UMAG":
+                umag_count_artists += 1
+            elif sosok_n == "FLUXUS":
+                fluxus_count_artists += 1
+
+        # 매출 인풋파일들의 "원본" 행 개수
+        umag_raw_rows = len(body_umag)   # 예: UMAG 매출
+        flux_song_raw_rows = len(body_fs) # fluxus_song
+        flux_yt_raw_rows   = len(body_fy) # fluxus_yt
+
+        # 사용자 안내용
+        st.session_state["verification_original"] = {
+            "곡비파일": {
+                "UMAG_아티스트수": umag_count_artists,
+                "FLUXUS_아티스트수": fluxus_count_artists
+            },
+            "매출액파일": {
+                "UMAG행개수": umag_raw_rows,
+                "FLUXUS_SONG행개수": flux_song_raw_rows,
+                "FLUXUS_YT행개수": flux_yt_raw_rows
+            }
+        }
+
+
+        # --------------------------------
+        # A) 소속별 "아티스트 set" 구성
+        # --------------------------------
+        umag_artists_from_cost = set()
+        fluxus_artists_from_cost = set()
+
+        for row_data in body_new:
+            artist_n = clean_artist_name(row_data[idx_artist_n])
+            if not artist_n or artist_n in ("합계","총계"):
                 continue
 
-        for i, row_fs in enumerate(body_fs):
-            raw = row_fs[col_artist_fs]
-            
-            # 원본(수정 전) 코드포인트 출력
-            raw_hex = debug_hex(raw)
+            sosok_n = row_data[idx_sosok_n].strip().upper()
+            splitted = re.split(r'[,&/]', sosok_n)
+            splitted = [x.strip() for x in splitted if x.strip()]
 
-            # clean_artist_name 적용
-            cleaned = clean_artist_name(raw)
-            cleaned_hex = debug_hex(cleaned)
+            # 중복 소속은 이미 처리
+            if len(splitted) == 1:
+                if splitted[0] == "UMAG":
+                    umag_artists_from_cost.add(artist_n)
+                elif splitted[0] == "FLUXUS":
+                    fluxus_artists_from_cost.add(artist_n)
 
-            # 디버그 출력
-            st.write(f"[fluxus_song2] row={i} / raw=<{raw}> (hex={raw_hex}) => cleaned=<{cleaned}> (hex={cleaned_hex})")
+        # --------------------------------
+        # B) 처리된 아티스트 수
+        # --------------------------------
+        umag_count_processed = len(umag_artists_from_cost)
+        fluxus_count_processed = len(fluxus_artists_from_cost)
 
-            # 이후 기존 로직
-            if not cleaned:
-                continue
-            ...
+        # --------------------------------
+        # C) 실제 매출 행 처리 개수
+        # --------------------------------
+
+        # (1) UMAG
+        umag_processed_rows = 0
+        for row_u in body_umag:
+            raw_artist = row_u[col_artist_umag]
+            a = clean_artist_name(raw_artist)
+            if a in umag_artists_from_cost:  # 곡비에도 있고, 소속=UMAG인 아티스트
+                umag_processed_rows += 1
+
+        # (2) FLUXUS SONG
+        fluxus_song_processed_rows = 0
+        for row_fs in body_fs:
+            raw_artist = row_fs[col_artist_fs]
+            a = clean_artist_name(raw_artist)
+            if a in fluxus_artists_from_cost:
+                fluxus_song_processed_rows += 1
+
+        # (3) FLUXUS YT
+        fluxus_yt_processed_rows = 0
+        for row_fy in body_fy:
+            raw_artist = row_fy[col_artist_fy]
+            a = clean_artist_name(raw_artist)
+            if a in fluxus_artists_from_cost:
+                fluxus_yt_processed_rows += 1
+
+        # --------------------------------
+        # D) st.session_state 저장
+        # --------------------------------
+        st.session_state["verification_processed"] = {
+            "곡비파일": {
+                "UMAG_아티스트수": umag_count_processed,
+                "FLUXUS_아티스트수": fluxus_count_processed
+            },
+            "매출액파일": {
+                "UMAG행개수": umag_processed_rows,
+                "FLUXUS_SONG행개수": fluxus_song_processed_rows,
+                "FLUXUS_YT행개수": fluxus_yt_processed_rows
+            }
+        }
+
+
+        #--------------------------------
+        # 검증 결과 출력
+        #--------------------------------
+        if "verification_original" in st.session_state and "verification_processed" in st.session_state:
+            orig = st.session_state["verification_original"]
+            proc = st.session_state["verification_processed"]
+
+            # 예: 곡비파일 아티스트
+            st.write("### 곡비파일 아티스트 검증")
+            st.write(f"- (원본) UMAG: {orig['곡비파일']['UMAG_아티스트수']}, FLUXUS: {orig['곡비파일']['FLUXUS_아티스트수']}")
+            st.write(f"- (처리) UMAG: {proc['곡비파일']['UMAG_아티스트수']}, FLUXUS: {proc['곡비파일']['FLUXUS_아티스트수']}")
+
+            # 예: 매출액 인풋파일
+            st.write("### 매출액 행 개수 검증")
+            st.write(f"- (원본) UMAG: {orig['매출액파일']['UMAG행개수']}")
+            st.write(f"- (처리) UMAG: {proc['매출액파일']['UMAG행개수']}")
+            # ...
+
+
 
 
         st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
         st.session_state["song_cost_prepared"] = True
         # double_sosok_artists 내역을 session_state 등에 저장해도 됨
         st.session_state["excluded_double_sosok"] = double_sosok_artists
-
-
-
 
 
 # ------------------------------------------------------------------------------
