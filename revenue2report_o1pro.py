@@ -848,7 +848,7 @@ def section_zero_prepare_song_cost():
                     "row_idx": i,
                     "raw_artist": raw_artist,
                     "cleaned_artist": cleaned_a,
-                    "reason": "곡비 UMAG에 없음 (or 중복소속)"
+                    "reason": "곡비파일에 아티스트 없음(UMAG_INTEGRATED)"
                 })
 
         # 3) fluxus_song 누락행
@@ -975,9 +975,7 @@ def section_zero_prepare_song_cost():
 
             if diff_umag_row!=0 or diff_flux_song!=0 or diff_flux_yt!=0:
                 st.warning(f"매출 데이터 행개수 차이 발생!")
-                st.warning(f"UMAG: {diff_umag_row}개")
-                st.warning(f"FLUXUS_SONG: {diff_flux_song}개")
-                st.warning(f"FLUXUS_YT: {diff_flux_yt}개")
+                st.warning(f"UMAG: {diff_umag_row}개    /   FLUXUS_SONG: {diff_flux_song}개    /   FLUXUS_YT: {diff_flux_yt}개")
 
             if diff_umag_artist==0 and diff_flux_artist==0 and diff_umag_row==0 and diff_flux_song==0 and diff_flux_yt==0:
                 st.success("원본과 처리 결과가 모두 일치합니다!")
@@ -988,9 +986,7 @@ def section_zero_prepare_song_cost():
             # 여기에서 UMAG / Fluxus Song / Fluxus YT ‘missing_rows’ 표
             if diff_umag_row!=0 or diff_flux_song!=0 or diff_flux_yt!=0:
                 st.warning(f"매출 데이터 행개수 차이 발생!")
-                st.warning(f"UMAG: {diff_umag_row}개")
-                st.warning(f"FLUXUS_SONG: {diff_flux_song}개")
-                st.warning(f"FLUXUS_YT: {diff_flux_yt}개")
+                st.warning(f"UMAG: {diff_umag_row}개    /   FLUXUS_SONG: {diff_flux_song}개    /   FLUXUS_YT: {diff_flux_yt}개")
                 if "missing_rows" in st.session_state:
                     missing_all = st.session_state["missing_rows"]
 
