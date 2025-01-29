@@ -437,11 +437,9 @@ def update_next_month_tab(song_cost_sh, ym: str):
 # ------------------------------------------------------------------------------
 def section_zero_prepare_song_cost():
     """
-    (수정)
-    - 이번 달(YYYYMM)과 직전 달(YYYYMM) 탭을 열어, '전월 잔액 + 당월 발생액'과
-      실제 매출(UMAG/FLUXUS)을 비교하여 '당월 차감액' 갱신
-    - Fluxus 소속 아티스트는 (fluxus_song + fluxus_yt) 인풋파일 매출액을 합산하여 사용
-    - '2개 소속'인 경우는 스킵(차감액=0 or 공백)
+    - 이번 달(YYYYMM)과 직전 달(YYYYMM) 탭을 열어, 
+      '전월 잔액 + 당월 발생액' vs (UMAG + FLUXUS매출) 비교 → '당월 차감액' 갱신
+    - 소속이 여러 개인 경우에도 (UMAG + FLUXUS) 매출 모두 합산
     """
     st.subheader("0) 곡비 파일 수정")
 
@@ -455,8 +453,8 @@ def section_zero_prepare_song_cost():
         if not re.match(r'^\d{6}$', new_ym):
             st.error("진행기간은 YYYYMM 6자리로 입력해야 합니다.")
             return
-        st.session_state["ym"] = new_ym
 
+        st.session_state["ym"] = new_ym
         prev_ym = get_prev_month_str(new_ym)
 
         # (1) input_song cost 열기
@@ -466,37 +464,37 @@ def section_zero_prepare_song_cost():
             st.error("Google Sheet 'input_song cost'를 찾을 수 없습니다.")
             return
 
-        # (2) input_online revenue_umag_Integrated 열기
+        # (2) umag / fluxus_song / fluxus_yt 열기
         try:
             umag_sh = gc_a.open("input_online revenue_umag_Integrated")
-        except gspread.exceptions.SpreadsheetNotFound:
-            st.error("Google Sheet 'input_online revenue_umag_Integrated'를 찾을 수 없습니다.")
+        except:
+            st.error("'input_online revenue_umag_Integrated' 없음")
             return
         
-        # (3) fluxus 인풋파일 2개 열기
         try:
             fluxus_song_sh = gc_a.open("input_online revenue_fluxus_song")
-        except gspread.exceptions.SpreadsheetNotFound:
-            st.error("Google Sheet 'input_online revenue_fluxus_song'를 찾을 수 없습니다.")
+        except:
+            st.error("'input_online revenue_fluxus_song' 없음")
             return
-
+        
         try:
             fluxus_yt_sh = gc_a.open("input_online revenue_fluxus_yt")
-        except gspread.exceptions.SpreadsheetNotFound:
-            st.error("Google Sheet 'input_online revenue_fluxus_yt'를 찾을 수 없습니다.")
+        except:
+            st.error("'input_online revenue_fluxus_yt' 없음")
             return
 
         # ---------------------------
-        # 0-A) 직전 달 "당월 잔액" dict
+        # 0-A) 직전 달(YYYYMM) 탭에서 '아티스트별 당월 잔액' dict
         # ---------------------------
         ws_map_sc = {ws.title: ws for ws in song_cost_sh.worksheets()}
         if prev_ym not in ws_map_sc:
             st.error(f"'input_song cost'에 직전 달 '{prev_ym}' 탭이 없습니다.")
             return
+
         ws_prev = ws_map_sc[prev_ym]
         data_prev = ws_prev.get_all_values()
         if not data_prev:
-            st.error(f"'{prev_ym}' 탭이 비어있습니다.")
+            st.error(f"'{prev_ym}' 탭이 비어있음")
             return
 
         header_prev = data_prev[0]
@@ -505,230 +503,188 @@ def section_zero_prepare_song_cost():
             idx_artist_p = header_prev.index("아티스트명")
             idx_remain_p = header_prev.index("당월 잔액")
         except ValueError as e:
-            st.error(f"직전 달 '{prev_ym}' 시트에 '아티스트명' 또는 '당월 잔액' 칼럼이 없습니다: {e}")
+            st.error(f"직전 달 '{prev_ym}' 시트에 '아티스트명' 또는 '당월 잔액' 없음: {e}")
             return
 
         prev_remain_dict = {}
         for row_p in body_prev:
-            artist = clean_artist_name(row_p[idx_artist_p])
-            if not artist or artist in ("합계", "총계"):
+            artist_p = clean_artist_name(row_p[idx_artist_p])
+            if not artist_p or artist_p in ("합계","총계"):
                 continue
             try:
-                val = float(row_p[idx_remain_p].replace(",", ""))
+                val_p = float(row_p[idx_remain_p].replace(",",""))
             except:
-                val = 0.0
-            prev_remain_dict[artist] = val
+                val_p = 0.0
+            prev_remain_dict[artist_p] = val_p
 
         # ---------------------------
-        # 0-B) 이번 달 탭(소속, 전월잔액, 당월 발생액, 당월 차감액...)
+        # 0-B) 이번 달(YYYYMM) 탭 read
         # ---------------------------
         if new_ym not in ws_map_sc:
             st.error(f"이번 달 '{new_ym}' 탭이 없습니다.")
             return
-        
+
         ws_new = ws_map_sc[new_ym]
         data_new = ws_new.get_all_values()
         if not data_new:
-            st.error(f"'{new_ym}' 탭이 비어있습니다.")
+            st.error(f"'{new_ym}' 탭이 비어있음")
             return
 
         header_new = data_new[0]
-        body_new = data_new[1:-1]  # 마지막 합계 행 제외
+        body_new   = data_new[1:-1]  # 마지막 합계행 제외
 
-        # 필수 칼럼
         try:
-            idx_sosok_n  = header_new.index("소속")  # <--- 새로 추가(가정): "UMAG"/"FLUXUS" 중 하나
+            idx_sosok_n  = header_new.index("소속")
             idx_artist_n = header_new.index("아티스트명")
             idx_prev_n   = header_new.index("전월 잔액")
             idx_curr_n   = header_new.index("당월 발생액")
             idx_ded_n    = header_new.index("당월 차감액")
-        except ValueError as e:
-            st.error(f"[input_song cost-{new_ym}]에 '소속' 칼럼이 없거나 필요한 칼럼이 없습니다: {e}")
+        except:
+            st.error(f"[{new_ym}] 탭에 '소속' 또는 '당월 차감액' 등이 없음")
             return
 
         # ---------------------------
-        # 0-C) UMAG 매출 dict
+        # 0-C) UMAG 인풋 read
         # ---------------------------
         ws_map_umag = {ws.title: ws for ws in umag_sh.worksheets()}
         if new_ym not in ws_map_umag:
-            st.error(f"'input_online revenue_umag_Integrated'에 '{new_ym}' 탭이 없습니다.")
+            st.error(f"'input_online revenue_umag_Integrated'에 '{new_ym}' 탭 없음")
             return
         ws_umag = ws_map_umag[new_ym]
         data_umag = ws_umag.get_all_values()
         header_umag = data_umag[0]
         body_umag   = data_umag[1:]
-
         try:
-            col_artist_umag = header_umag.index("앨범아티스트")
-            col_revenue_umag= header_umag.index("권리사정산금액")
-        except ValueError:
-            st.error("umag 인풋파일에서 '앨범아티스트' 또는 '권리사정산금액' 칼럼을 찾을 수 없습니다.")
+            col_artist_umag  = header_umag.index("앨범아티스트")
+            col_revenue_umag = header_umag.index("권리사정산금액")
+        except:
+            st.error("'앨범아티스트' / '권리사정산금액' 칼럼 필요(UMAG)")
             return
-        
+
+        from collections import defaultdict
         sum_umag_dict = defaultdict(float)
         for row_u in body_umag:
-            a = clean_artist_name(row_u[col_artist_umag])
-            if not a:
+            a_u = clean_artist_name(row_u[col_artist_umag])
+            if not a_u:
                 continue
             try:
-                val = float(row_u[col_revenue_umag].replace(",", ""))
+                val_u = float(row_u[col_revenue_umag].replace(",",""))
             except:
-                val = 0.0
-            sum_umag_dict[a] += val
-
-        # (추가) UMAG 인풋파일에서 '누락 행'을 기록할 리스트
-        missing_umag_rows = []
-
+                val_u = 0.0
+            sum_umag_dict[a_u] += val_u
 
         # ---------------------------
-        # 0-D) FLUXUS(song) 매출 dict
+        # 0-D) fluxus_song read
         # ---------------------------
         ws_map_flux_song = {ws.title: ws for ws in fluxus_song_sh.worksheets()}
         if new_ym not in ws_map_flux_song:
-            st.error(f"'input_online revenue_fluxus_song'에 '{new_ym}' 탭이 없습니다.")
+            st.error(f"'fluxus_song'에 '{new_ym}' 탭이 없음")
             return
-        ws_flux_song = ws_map_flux_song[new_ym]
-        data_flux_song = ws_flux_song.get_all_values()
-        header_fs = data_flux_song[0]
-        body_fs   = data_flux_song[1:]
-
+        ws_fs = ws_map_flux_song[new_ym]
+        data_fs = ws_fs.get_all_values()
+        if not data_fs:
+            st.error(f"'{new_ym}' 탭(fluxus_song) 비어있음")
+            return
+        header_fs = data_fs[0]
+        body_fs   = data_fs[1:]
         try:
-            col_artist_fs = header_fs.index("가수명")  # 기존 앨범아티스트
+            col_artist_fs = header_fs.index("가수명")
             col_revenue_fs= header_fs.index("권리사 정산액")
-        except ValueError:
-            st.error("fluxus_song 인풋파일에 '가수명' 또는 '권리사 정산액' 칼럼이 없습니다.")
+        except:
+            st.error("fluxus_song: '가수명' / '권리사 정산액' 칼럼 필요")
             return
 
         sum_flux_song_dict = defaultdict(float)
         for row_fs in body_fs:
-            a = clean_artist_name(row_fs[col_artist_fs])
-            if not a:
+            a_fs = clean_artist_name(row_fs[col_artist_fs])
+            if not a_fs:
                 continue
             try:
-                val = float(row_fs[col_revenue_fs].replace(",", ""))
+                val_fs = float(row_fs[col_revenue_fs].replace(",",""))
             except:
-                val = 0.0
-            sum_flux_song_dict[a] += val
-
-        # (추가) fluxus_song 인풋파일에서 '누락 행' 기록
-        missing_flux_song_rows = []
-
+                val_fs = 0.0
+            sum_flux_song_dict[a_fs] += val_fs
 
         # ---------------------------
-        # 0-E) FLUXUS(yt) 매출 dict
+        # 0-E) fluxus_yt read
         # ---------------------------
         ws_map_flux_yt = {ws.title: ws for ws in fluxus_yt_sh.worksheets()}
         if new_ym not in ws_map_flux_yt:
-            st.error(f"'input_online revenue_fluxus_yt'에 '{new_ym}' 탭이 없습니다.")
+            st.error(f"'fluxus_yt'에 '{new_ym}' 탭 없음")
             return
-        ws_flux_yt = ws_map_flux_yt[new_ym]
-        data_flux_yt = ws_flux_yt.get_all_values()
-        header_fy = data_flux_yt[0]
-        body_fy   = data_flux_yt[1:]
-
+        ws_fy = ws_map_flux_yt[new_ym]
+        data_fy = ws_fy.get_all_values()
+        if not data_fy:
+            st.error(f"'{new_ym}' 탭(fluxus_yt) 비어있음")
+            return
+        header_fy = data_fy[0]
+        body_fy   = data_fy[1:]
         try:
-            col_artist_fy = header_fy.index("ALBIM ARTIST")  # 기존 '앨범아티스트'
-            col_revenue_fy= header_fy.index("권리사 정산액 \n(KRW)")
-        except ValueError:
-            st.error("fluxus_yt 인풋파일에 'ALBIM ARTIST' 또는 '권리사 정산액 \\n(KRW)' 칼럼이 없습니다.")
+            col_artist_fy  = header_fy.index("ALBIM ARTIST")
+            col_revenue_fy = header_fy.index("권리사 정산액 \n(KRW)")
+        except:
+            st.error("'fluxus_yt' 칼럼( ALBIM ARTIST, 권리사 정산액 \n(KRW) ) 필요")
             return
 
         sum_flux_yt_dict = defaultdict(float)
         for row_fy in body_fy:
-            a = clean_artist_name(row_fy[col_artist_fy])
-            if not a:
+            a_fy = clean_artist_name(row_fy[col_artist_fy])
+            if not a_fy:
                 continue
             try:
-                val = float(row_fy[col_revenue_fy].replace(",", ""))
+                val_fy = float(row_fy[col_revenue_fy].replace(",",""))
             except:
-                val = 0.0
-            sum_flux_yt_dict[a] += val
-
-        # (추가) fluxus_yt 인풋파일에서 '누락 행' 기록
-        missing_flux_yt_rows = []
-
+                val_fy = 0.0
+            sum_flux_yt_dict[a_fy] += val_fy
 
         # ---------------------------------------
-        # 0-F) batch_update 준비
+        # [중요] 2개 이상 소속도 “모두” 매출 더해서 actual_deduct 산출
         # ---------------------------------------
         updated_vals_for_def = []
-        double_sosok_artists = []  # 2개 소속 중복된 아티스트 기록
 
         for row_idx, row_data in enumerate(body_new):
             artist_n = clean_artist_name(row_data[idx_artist_n])
-            sosok_n  = row_data[idx_sosok_n].strip().upper()  # 예: "UMAG" / "FLUXUS" / ...
             if not artist_n or artist_n in ("합계","총계"):
-                updated_vals_for_def.append(["","",""])  # 전월, 당월발생, 당월차감 공란
+                updated_vals_for_def.append(["","",""])
                 continue
 
-            # 전월 잔액
-            prev_val = prev_remain_dict.get(artist_n, 0.0)
+            sosok_str = row_data[idx_sosok_n].strip().upper()
+            splitted = re.split(r'[,&/]', sosok_str)  # "UMAG,FLUXUS" → ["UMAG","FLUXUS"]
+            splitted = [x.strip() for x in splitted if x.strip()]
 
-            # 당월 발생액 (시트에 이미 기재된 값)
             try:
                 curr_val_str = row_data[idx_curr_n].replace(",","")
                 curr_val = float(curr_val_str) if curr_val_str else 0.0
             except:
                 curr_val = 0.0
 
-            # '소속' 검사
-            splitted = re.split(r'[,&/]', sosok_n)  # 예: "UMAG,FLUXUS" 등
-            splitted = [x.strip() for x in splitted if x.strip()]
+            prev_val = prev_remain_dict.get(artist_n,0.0)
 
-
-            # (수정된) 소속이 여러 개면 => 각 소속의 매출을 모두 더함
+            # 모든 소속매출 합산
             total_revenue = 0.0
-            for one_s in splitted:
-                if one_s == "UMAG":
+            for one_sosok in splitted:
+                if one_sosok == "UMAG":
                     total_revenue += sum_umag_dict.get(artist_n, 0.0)
-                elif one_s == "FLUXUS":
+                elif one_sosok == "FLUXUS":
                     fs_val = sum_flux_song_dict.get(artist_n, 0.0)
                     fy_val = sum_flux_yt_dict.get(artist_n, 0.0)
                     total_revenue += (fs_val + fy_val)
-                elif one_s == "UMAG, FLUXUS":
-                    total_revenue += (sum_umag_dict.get(artist_n, 0.0) + fs_val + fy_val)  # 소속이 2개인 경우
-                # else:
-                #    pass
-
-
-            # 매출합
-            if sosok_n == "UMAG":
-                total_revenue = sum_umag_dict.get(artist_n, 0.0)
-            elif sosok_n == "FLUXUS":
-                # fluxus_song + fluxus_yt
-                fs_val = sum_flux_song_dict.get(artist_n, 0.0)
-                fy_val = sum_flux_yt_dict.get(artist_n, 0.0)
-                total_revenue = fs_val + fy_val
-            elif sosok_n == "UMAG, FLUXUS":
-                total_revenue = (sum_umag_dict.get(artist_n, 0.0) + fs_val + fy_val)
-            else:
-                # 알수없는 소속이거나 공란 => 스킵
-                updated_vals_for_def.append([prev_val, curr_val, ""])
-                continue
+                else:
+                    # 알수없는 소속? pass
+                    pass
 
             can_deduct = prev_val + curr_val
             actual_deduct = min(total_revenue, can_deduct)
 
             updated_vals_for_def.append([prev_val, curr_val, actual_deduct])
 
-        # batch_update
+        # batch_update → (E:F:G) or (D:E:F) 등 실제 칼럼 위치 맞춤
         total_rows = len(body_new)
         start_row = 2
-        end_row = 1 + total_rows
-        range_notation = f"E{start_row}:G{end_row}"
-        requests_body = [
-            {
-                "range": range_notation,
-                "values": updated_vals_for_def
-            }
-        ]
+        end_row   = 1 + total_rows
+        range_notation = f"E{start_row}:G{end_row}"  # (전월/당월발생/당월차감)
+        requests_body = [{"range": range_notation, "values": updated_vals_for_def}]
         ws_new.batch_update(requests_body, value_input_option="USER_ENTERED")
-
-        # 업데이트 완료 후, 2개 소속(중복) 아티스트 안내
-        if double_sosok_artists:
-            msg = f"2개 소속이 중복되어 작업에서 제외된 아티스트: {double_sosok_artists}"
-            st.warning(msg)
-
 
         #--------------------------------
         # 아티스트 수 검증
@@ -777,22 +733,6 @@ def section_zero_prepare_song_cost():
             artist_n = clean_artist_name(row_data[idx_artist_n])
             if not artist_n or artist_n in ("합계","총계"):
                 continue
-
-            sosok_n = row_data[idx_sosok_n].strip().upper()
-            splitted = re.split(r'[,&/]', sosok_n)
-            splitted = [x.strip() for x in splitted if x.strip()]
-
-            # 중복 소속은 이미 처리
-            if len(splitted) == 1:
-                if splitted[0] == "UMAG":
-                    umag_artists_from_cost.add(artist_n)
-                elif splitted[0] == "FLUXUS":
-                    fluxus_artists_from_cost.add(artist_n)
-            elif len(splitted) == 2:
-                if splitted[0] == "UMAG, FLUXUS":
-                    umag_artists_from_cost.add(artist_n)
-                    fluxus_artists_from_cost.add(artist_n)
-                    
 
 
         # 2) UMAG 인풋파일 '누락행' 탐색
@@ -966,8 +906,6 @@ def section_zero_prepare_song_cost():
 
         st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
         st.session_state["song_cost_prepared"] = True
-        # double_sosok_artists 내역을 session_state 등에 저장해도 됨
-        st.session_state["excluded_double_sosok"] = double_sosok_artists
 
 
 # ------------------------------------------------------------------------------
