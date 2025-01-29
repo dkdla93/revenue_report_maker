@@ -872,11 +872,6 @@ def section_zero_prepare_song_cost():
 
         with tab_summary:    
             # 여기서 곡비파일 아티스트 수 / 매출액 행 개수 비교
-            if diff_umag_artist==0 and diff_flux_artist==0 and diff_umag_row==0 and diff_flux_song==0 and diff_flux_yt==0:
-                st.success("원본과 처리 결과가 모두 일치합니다!")
-            else:
-                st.error("원본 vs 처리 결과에 차이가 있습니다. 아래와 상세탭에서 상세 누락 행을 확인해 주세요.")
-
             st.write("#### 곡비파일 아티스트 검증")
             st.write(f"- (원본) UMAG: {orig['곡비파일']['UMAG_아티스트수']}, FLUXUS: {orig['곡비파일']['FLUXUS_아티스트수']}")
             st.write(f"- (처리) UMAG: {proc['곡비파일']['UMAG_아티스트수']}, FLUXUS: {proc['곡비파일']['FLUXUS_아티스트수']}")
@@ -895,6 +890,11 @@ def section_zero_prepare_song_cost():
             diff_umag_row = orig["매출액파일"]["UMAG행개수"] - proc["매출액파일"]["UMAG행개수"]
             diff_flux_song = orig["매출액파일"]["FLUXUS_SONG행개수"] - proc["매출액파일"]["FLUXUS_SONG행개수"]
             diff_flux_yt   = orig["매출액파일"]["FLUXUS_YT행개수"] - proc["매출액파일"]["FLUXUS_YT행개수"]
+
+            if diff_umag_artist==0 and diff_flux_artist==0 and diff_umag_row==0 and diff_flux_song==0 and diff_flux_yt==0:
+                st.success("원본과 처리 결과가 모두 일치합니다!")
+            else:
+                st.error("원본 vs 처리 결과에 차이가 있습니다. 상세탭에서 상세 누락 행을 확인해 주세요.")
 
             if diff_umag_row!=0 or diff_flux_song!=0 or diff_flux_yt!=0:
                 st.warning(f"매출 데이터 행개수 차이 발생! \nUMAG: {diff_umag_row}, \nFLUXUS_SONG: {diff_flux_song}, \nFLUXUS_YT: {diff_flux_yt}")
