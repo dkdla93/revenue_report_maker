@@ -431,6 +431,19 @@ def update_next_month_tab(song_cost_sh, ym: str):
     print(f"'{ym}' → '{next_ym}' 탭 복제 및 전월/당월 차감액만 갱신(배치 업데이트) 완료!")
 
 
+def is_summary_row(cleaned_artist_name: str) -> bool:
+    """
+    아티스트명이 공란('')이거나,
+    '합계', '총계', 'TOTAL', 'total' 같은 문자열이면
+    합계행으로 간주해서 True 리턴
+    """
+    if not cleaned_artist_name:
+        return True
+    # 대소문자 구분 없이 모두 upper() 해서 비교
+    up = cleaned_artist_name.upper()
+    return (up in ("합계", "총계", "TOTAL"))
+
+
 
 # ------------------------------------------------------------------------------
 # (A) "0) 곡비 파일 수정" 섹션
@@ -554,6 +567,19 @@ def section_zero_prepare_song_cost():
         data_umag = ws_umag.get_all_values()
         header_umag = data_umag[0]
         body_umag   = data_umag[1:]
+
+        # [추가] 합계행(요약행) 필터링
+        col_artist_umag = header_umag.index("앨범아티스트")
+        filtered_umag = []
+        for row_u in body_umag:
+            a_u = clean_artist_name(row_u[col_artist_umag])
+            if is_summary_row(a_u):  
+                # 합계/총계/공란 → skip
+                continue
+            filtered_umag.append(row_u)
+
+        body_umag = filtered_umag
+
         try:
             col_artist_umag  = header_umag.index("앨범아티스트")
             col_revenue_umag = header_umag.index("권리사정산금액")
@@ -599,6 +625,17 @@ def section_zero_prepare_song_cost():
             return
         header_fs = data_fs[0]
         body_fs   = data_fs[1:]
+
+        # [추가] 합계/요약행 필터링
+        col_artist_fs = header_fs.index("가수명")
+        filtered_fs = []
+        for row_fs_ in body_fs:
+            artist_temp = clean_artist_name(row_fs_[col_artist_fs])
+            if is_summary_row(artist_temp):
+                continue
+            filtered_fs.append(row_fs_)
+        body_fs = filtered_fs
+
         try:
             col_artist_fs = header_fs.index("가수명")
             col_revenue_fs= header_fs.index("권리사 정산액")
@@ -643,6 +680,17 @@ def section_zero_prepare_song_cost():
             return
         header_fy = data_fy[0]
         body_fy   = data_fy[1:]
+
+        # [추가] 합계/요약행 필터링
+        col_artist_fy = header_fy.index("ALBIM ARTIST")
+        filtered_fy = []
+        for row_fy_ in body_fy:
+            artist_temp = clean_artist_name(row_fy_[col_artist_fy])
+            if is_summary_row(artist_temp):
+                continue
+            filtered_fy.append(row_fy_)
+        body_fy = filtered_fy
+
         try:
             col_artist_fy  = header_fy.index("ALBIM ARTIST")
             col_revenue_fy = header_fy.index("권리사 정산액 \n(KRW)")
