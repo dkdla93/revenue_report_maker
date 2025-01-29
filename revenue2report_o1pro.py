@@ -710,11 +710,30 @@ def section_zero_prepare_song_cost():
         for i, row_fs in enumerate(body_fs):
             raw = row_fs[col_artist_fs]
             debugged = debug_hex(raw)
-            st.write(f"[fluxus_song] row={i}, raw='{raw}', hex={debugged}")
+            st.write(f"[fluxus_song1] row={i}, raw='{raw}', hex={debugged}")
 
             a = clean_artist_name(raw)
             if not a:
                 continue
+
+        for i, row_fs in enumerate(body_fs):
+            raw = row_fs[col_artist_fs]
+            
+            # 원본(수정 전) 코드포인트 출력
+            raw_hex = debug_hex(raw)
+
+            # clean_artist_name 적용
+            cleaned = clean_artist_name(raw)
+            cleaned_hex = debug_hex(cleaned)
+
+            # 디버그 출력
+            st.write(f"[fluxus_song2] row={i} / raw=<{raw}> (hex={raw_hex}) => cleaned=<{cleaned}> (hex={cleaned_hex})")
+
+            # 이후 기존 로직
+            if not cleaned:
+                continue
+            ...
+
 
         st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
         st.session_state["song_cost_prepared"] = True
