@@ -565,9 +565,18 @@ def section_zero_prepare_song_cost():
         sum_umag_dict = defaultdict(float)
         for row_u in body_umag:
             a_u = clean_artist_name(row_u[col_artist_umag])
-            # [1] 합계행 조건
-            if not a_u or a_u in ("합계","총계","TOTAL"):
-                # 이 행은 합계행 -> 스킵
+
+            # 소문자로 변환한 값
+            a_lower = a_u.lower()
+            # (1) 아티스트명이 공란, (2) 아티스트명 안에 '합계','총계','total' 포함, 
+            # (3) 전부 숫자인 경우 -> 합계행으로 보고 스킵
+            if (
+                not a_u 
+                or '합계' in a_u 
+                or '총계' in a_u 
+                or 'total' in a_lower 
+                or a_u.isdigit()
+            ):
                 continue
 
             try:
@@ -600,7 +609,18 @@ def section_zero_prepare_song_cost():
         sum_flux_song_dict = defaultdict(float)
         for row_fs in body_fs:
             a_fs = clean_artist_name(row_fs[col_artist_fs])
-            if not a_fs or a_fs in ("합계","총계","TOTAL"):
+
+            # 소문자로 변환한 값
+            a_lower = a_u.lower()
+            # (1) 아티스트명이 공란, (2) 아티스트명 안에 '합계','총계','total' 포함, 
+            # (3) 전부 숫자인 경우 -> 합계행으로 보고 스킵
+            if (
+                not a_u 
+                or '합계' in a_u 
+                or '총계' in a_u 
+                or 'total' in a_lower 
+                or a_u.isdigit()
+            ):
                 continue
 
             try:
@@ -633,7 +653,18 @@ def section_zero_prepare_song_cost():
         sum_flux_yt_dict = defaultdict(float)
         for row_fy in body_fy:
             a_fy = clean_artist_name(row_fy[col_artist_fy])
-            if not a_fy or a_fy in ("합계","총계","TOTAL"):
+
+            # 소문자로 변환한 값
+            a_lower = a_u.lower()
+            # (1) 아티스트명이 공란, (2) 아티스트명 안에 '합계','총계','total' 포함, 
+            # (3) 전부 숫자인 경우 -> 합계행으로 보고 스킵
+            if (
+                not a_u 
+                or '합계' in a_u 
+                or '총계' in a_u 
+                or 'total' in a_lower 
+                or a_u.isdigit()
+            ):
                 continue
 
             try:
@@ -862,9 +893,9 @@ def section_zero_prepare_song_cost():
         # 검증 결과 출력
         #--------------------------------
         # 곡비파일 수정 완료 후 검증 결과를 보여주는 영역
-        st.write("### 검증 결과 요약")
+        st.write("### 검증 결과")
 
-        tab_summary, tab_missing = st.tabs(["검증 요약","인풋 누락 행 목록"])
+        tab_summary, tab_missing = st.tabs(["검증 요약","누락 행 목록"])
 
         if "verification_original" in st.session_state and "verification_processed" in st.session_state:
             orig = st.session_state["verification_original"]
@@ -891,37 +922,39 @@ def section_zero_prepare_song_cost():
             diff_flux_song = orig["매출액파일"]["FLUXUS_SONG행개수"] - proc["매출액파일"]["FLUXUS_SONG행개수"]
             diff_flux_yt   = orig["매출액파일"]["FLUXUS_YT행개수"] - proc["매출액파일"]["FLUXUS_YT행개수"]
 
+            if diff_umag_row!=0 or diff_flux_song!=0 or diff_flux_yt!=0:
+                st.warning(f"매출 데이터 행개수 차이 발생!")
+                st.write(f"UMAG: {diff_umag_row}개, FLUXUS_SONG: {diff_flux_song}개, \nFLUXUS_YT: {diff_flux_yt}개")
+
             if diff_umag_artist==0 and diff_flux_artist==0 and diff_umag_row==0 and diff_flux_song==0 and diff_flux_yt==0:
                 st.success("원본과 처리 결과가 모두 일치합니다!")
             else:
                 st.error("원본 vs 처리 결과에 차이가 있습니다. 상세탭에서 상세 누락 행을 확인해 주세요.")
 
-            if diff_umag_row!=0 or diff_flux_song!=0 or diff_flux_yt!=0:
-                st.warning(f"매출 데이터 행개수 차이 발생! \nUMAG: {diff_umag_row}, \nFLUXUS_SONG: {diff_flux_song}, \nFLUXUS_YT: {diff_flux_yt}")
-
         with tab_missing:
             # 여기에서 UMAG / Fluxus Song / Fluxus YT ‘missing_rows’ 표
             if diff_umag_row!=0 or diff_flux_song!=0 or diff_flux_yt!=0:
-                st.warning(f"매출 데이터 행개수 차이 발생! \nUMAG: {diff_umag_row}, \nFLUXUS_SONG: {diff_flux_song}, \nFLUXUS_YT: {diff_flux_yt}")
+                st.warning(f"매출 데이터 행개수 차이 발생!")
+                st.write(f"UMAG: {diff_umag_row}개, FLUXUS_SONG: {diff_flux_song}개, \nFLUXUS_YT: {diff_flux_yt}개")
                 if "missing_rows" in st.session_state:
                     missing_all = st.session_state["missing_rows"]
 
                     # UMAG
                     if missing_all["UMAG"]:
-                        st.write("#### UMAG 인풋 누락 행 목록")
+                        st.write("#### 매출액_UMAG 누락 행 목록")
                         import pandas as pd
                         df_umag_miss = pd.DataFrame(missing_all["UMAG"])
                         st.dataframe(df_umag_miss)
 
                     # FLUXUS_SONG
                     if missing_all["FLUXUS_SONG"]:
-                        st.write("#### Fluxus Song 인풋 누락 행 목록")
+                        st.write("#### 매출액_Fluxus_Song 누락 행 목록")
                         df_fs_miss = pd.DataFrame(missing_all["FLUXUS_SONG"])
                         st.dataframe(df_fs_miss)
                     
                     # FLUXUS_YT
                     if missing_all["FLUXUS_YT"]:
-                        st.write("#### Fluxus YT 인풋 누락 행 목록")
+                        st.write("#### 매출액_Fluxus_YT 누락 행 목록")
                         df_fy_miss = pd.DataFrame(missing_all["FLUXUS_YT"])
                         st.dataframe(df_fy_miss)
 
