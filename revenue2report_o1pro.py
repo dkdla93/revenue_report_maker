@@ -691,10 +691,16 @@ def section_zero_prepare_song_cost():
         if double_sosok_artists:
             msg = f"2개 소속이 중복되어 작업에서 제외된 아티스트: {double_sosok_artists}"
             st.warning(msg)
+ 
+        # 디버깅용: 모든 아티스트 출력
+        for i, row_fs in enumerate(body_fs):
+            raw = row_fs[col_artist_fs]
+            debugged = debug_hex(raw)
+            st.write(f"[fluxus_song] row={i}, raw='{raw}', hex={debugged}")
 
-        raw = row_fs[col_artist_fs]
-
-        st.success(f"== Debug artist raw: {raw} | hex: {debug_hex(raw)}")
+            a = clean_artist_name(raw)
+            if not a:
+                continue
 
         st.success(f"곡비 파일('{new_ym}' 탭) 수정 완료!")
         st.session_state["song_cost_prepared"] = True
