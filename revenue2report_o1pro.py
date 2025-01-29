@@ -455,6 +455,8 @@ def section_zero_prepare_song_cost():
       '전월 잔액 + 당월 발생액' vs (UMAG + FLUXUS매출) 비교 → '당월 차감액' 갱신
     - 소속이 여러 개인 경우에도 (UMAG + FLUXUS) 매출 모두 합산
     """
+    import pandas as pd  # 함수 시작부
+
     st.subheader("0) 곡비 파일 수정")
 
     default_ym = st.session_state.get("ym", "")
