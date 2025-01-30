@@ -3555,12 +3555,12 @@ def generate_report(
                     report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
                     report_fluxus_matrix[row_cursor][5] = to_currency(rv)
                     row_cursor += 1
-                    if len(fluxus_yt_details_sorted) == row_cursor-13:
+                    if len(fluxus_yt_details_sorted) == row_cursor-14:
                         report_fluxus_matrix[row_cursor][1] = d["album"]
                         report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({int(month_val)-1}월)"
                         report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
-                        report_fluxus_matrix[row_cursor][5] = to_currency(sum_fs_rv_val)
-                        fluxus_album_sum[d["album"]] += sum_fs_rv_val
+                        report_fluxus_matrix[row_cursor][5] = to_currency(fluxus_sum_2)
+                        fluxus_album_sum[d["album"]] += fluxus_sum_2
                         row_cursor += 1
 
                 row_cursor += 2
