@@ -1601,6 +1601,11 @@ def generate_report(
     # 시트 생성(batch)
     needed_titles = []
     for artist in all_artists:
+        # 곡비 파일에 아티스트 없으면 스킵!
+        if artist not in artist_sosok_dict:
+            print(f"[WARN] 곡비에 없는 아티스트 {artist} -> 시트 생성 안 함")
+            continue
+
         affils = artist_sosok_dict[artist]
         for one_sosok in affils:
             if one_sosok == "UMAG":
