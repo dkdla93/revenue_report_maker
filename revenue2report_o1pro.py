@@ -481,9 +481,9 @@ def section_zero_prepare_song_cost():
 
         # (2) umag / fluxus_song / fluxus_yt 열기
         try:
-            umag_sh = gc_a.open("input_online revenue_umag_Integrated")
+            umag_sh = gc_a.open("input_online revenue_umag_integrated")
         except:
-            st.error("'input_online revenue_umag_Integrated' 없음")
+            st.error("'input_online revenue_umag_integrated' 없음")
             return
         
         try:
@@ -563,7 +563,7 @@ def section_zero_prepare_song_cost():
         # ---------------------------
         ws_map_umag = {ws.title: ws for ws in umag_sh.worksheets()}
         if new_ym not in ws_map_umag:
-            st.error(f"'input_online revenue_umag_Integrated'에 '{new_ym}' 탭 없음")
+            st.error(f"'input_online revenue_umag_integrated'에 '{new_ym}' 탭 없음")
             return
         ws_umag = ws_map_umag[new_ym]
         data_umag = ws_umag.get_all_values()
