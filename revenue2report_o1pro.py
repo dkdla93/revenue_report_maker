@@ -3568,8 +3568,8 @@ def generate_report(
                 distinct_albums = set(d["album"] for d in fluxus_fs_details_sorted)
                 album_count = len(distinct_albums)
 
-                start_service_row = header_row_1 + 1
-                end_service_row   = start_service_row + len(fluxus_yt_details_sorted) + album_count
+                start_service_row = 14
+                end_service_row   = row_cursor_sum1 - 2 
                 
                 row_cursor += 2
                 # 합계
