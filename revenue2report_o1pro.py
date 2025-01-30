@@ -1367,7 +1367,7 @@ def generate_report(
         return ""
 
     header_or = data_or[0]
-    rows_or = data_or[1:-2]
+    rows_or = data_or[1:]
     try:
         col_aartist = header_or.index("앨범아티스트")
         col_album   = header_or.index("앨범명")
@@ -1506,7 +1506,7 @@ def generate_report(
             "sum_fy_rv_val": sum_fy_rv_val
         })
 
-
+    """""
     for artist, val in fluxus_song_dict.items():
         # val이 매출액 float 라면, "앨범명", "서비스명" 등도 함께 append 해야 할 수도 있음
         # 예시(단순화):
@@ -1526,7 +1526,7 @@ def generate_report(
             "revenue": fy_rv_val,
             "sum_fy_rv_val": sum_fy_rv_val
         })
-
+    """""
     # ---------------------------------------------------------
     # [추가] check_dict 내부 구조 확인 / 초기화
     # ---------------------------------------------------------
