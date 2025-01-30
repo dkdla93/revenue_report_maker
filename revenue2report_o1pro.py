@@ -1621,6 +1621,11 @@ def generate_report(
     all_requests = []  # batchUpdate requests 모음
 
     for i, artist in enumerate(all_artists):
+        if artist not in artist_sosok_dict:
+            # 곡비 파일에 없는 아티스트는 스킵(또는 경고 표시)
+            print(f"[WARN] 곡비에 없는 아티스트 '{artist}'는 무시합니다.")
+            continue
+        
         affils = artist_sosok_dict[artist]
 
         for one_sosok in affils:
