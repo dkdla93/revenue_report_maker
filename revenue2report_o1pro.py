@@ -1506,27 +1506,27 @@ def generate_report(
             "sum_fy_rv_val": sum_fy_rv_val
         })
 
-    """""
-    for artist, val in fluxus_song_dict.items():
-        # val이 매출액 float 라면, "앨범명", "서비스명" 등도 함께 append 해야 할 수도 있음
-        # 예시(단순화):
-        fluxus_song_dict[artist].append({
-            "album":  fs_alb,
-            "country": fs_ctry,
-            "revenue": fs_rv_val,
-            "sum_fs_rv_val": sum_fs_rv_val
-        })
+    
+    # for artist, val in fluxus_song_dict.items():
+    #    # val이 매출액 float 라면, "앨범명", "서비스명" 등도 함께 append 해야 할 수도 있음
+    #    # 예시(단순화):
+    #    fluxus_song_dict[artist].append({
+    #        "album":  fs_alb,
+    #        "country": fs_ctry,
+    #        "revenue": fs_rv_val,
+    #        "sum_fs_rv_val": sum_fs_rv_val
+    #    })
 
-    for artist, val in fluxus_yt_dict.items():
-        fluxus_yt_dict[artist].append({
-            "album": fy_alb,
-            "track_title": fy_title,
-            "track_number": fy_number,
-            "track_id": fy_id,
-            "revenue": fy_rv_val,
-            "sum_fy_rv_val": sum_fy_rv_val
-        })
-    """""
+    # for artist, val in fluxus_yt_dict.items():
+    #    fluxus_yt_dict[artist].append({
+    #        "album": fy_alb,
+    #        "track_title": fy_title,
+    #        "track_number": fy_number,
+    #        "track_id": fy_id,
+    #        "revenue": fy_rv_val,
+    #        "sum_fy_rv_val": sum_fy_rv_val
+    #    })
+    
     # ---------------------------------------------------------
     # [추가] check_dict 내부 구조 확인 / 초기화
     # ---------------------------------------------------------
@@ -3442,7 +3442,10 @@ def generate_report(
                 ws_fluxus_report_id = ws_fluxus_report.id
 
                 # 매출 합
-                fluxus_sum_all = sum(d["revenue"] for d in fluxus_yt_details_sorted) + sum_fs_rv_val  # "음원서비스별" 총합
+                fluxus_sum_1 = sum(d["revenue"] for d in fluxus_yt_details_sorted)  # "음원서비스별" 총합
+                fluxus_sum_2 = sum(d["fs_rv_val"] for d in fluxus_fs_details_sorted)
+                fluxus_sum_all = fluxus_sum_1 + fluxus_sum_2
+
                 # 앨범별 합
                 fluxus_album_sum = defaultdict(float)
                 for d in fluxus_yt_details_sorted:
@@ -3506,7 +3509,7 @@ def generate_report(
                     report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
                     report_fluxus_matrix[row_cursor][5] = to_currency(rv)
                     row_cursor += 1
-                    if len(fluxus_yt_details_sorted) == row_cursor:
+                    if len(fluxus_yt_details_sorted) == row_cursor-13:
                         report_fluxus_matrix[row_cursor][1] = d["album"]
                         report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({int(month_val)-1}월)"
                         report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
