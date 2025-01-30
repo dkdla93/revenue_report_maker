@@ -3470,7 +3470,7 @@ def generate_report(
 
                 # 매출 합
                 fluxus_sum_1 = sum(d["revenue"] for d in fluxus_yt_details_sorted)  # "음원서비스별" 총합
-                fluxus_sum_2 = sum(d["fs_rv_val"] for d in fluxus_fs_details_sorted)
+                fluxus_sum_2 = sum(d["revenue"] for d in fluxus_fs_details_sorted)
                 fluxus_sum_all = fluxus_sum_1 + fluxus_sum_2
 
                 # 앨범별 합
