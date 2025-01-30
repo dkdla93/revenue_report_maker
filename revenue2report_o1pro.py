@@ -1351,14 +1351,14 @@ def generate_report(
 
     # ------------------- (B) input_online revenue (UMAG) -------------
     try:
-        revenue_sh = gc.open("input_online revenue") #UMAG
+        revenue_sh = gc.open("input_online revenue_umag_integrated") #UMAG
     except gspread.exceptions.SpreadsheetNotFound:
-        st.error("Google Sheet 'input_online revenue'를 찾을 수 없습니다.")
+        st.error("Google Sheet 'input_online revenue_umag_integrated'를 찾을 수 없습니다.")
         return ""
 
     ws_map_or = {ws.title: ws for ws in revenue_sh.worksheets()}
     if ym not in ws_map_or:
-        st.error(f"input_online revenue에 '{ym}' 탭이 없습니다.")
+        st.error(f"input_online revenue_umag_integrated에 '{ym}' 탭이 없습니다.")
         return ""
     ws_or = ws_map_or[ym]
     data_or = ws_or.get_all_values()
@@ -1376,7 +1376,7 @@ def generate_report(
         col_service = header_or.index("서비스명")
         col_revenue = header_or.index("권리사정산금액")
     except ValueError as e:
-        st.error(f"[input_online revenue] 시트 칼럼 명이 맞는지 확인 필요: {e}")
+        st.error(f"[input_online revenue_umag_integrated] 시트 칼럼 명이 맞는지 확인 필요: {e}")
         return ""
 
     # 아티스트별 매출 정보
@@ -1441,7 +1441,7 @@ def generate_report(
         fs_col_country = header_fs.index("서비스 구분")
         fs_col_revenue = header_fs.index("권리사 정산액")
     except ValueError as e:
-        st.error(f"[input_online revenue] 시트 칼럼 명이 맞는지 확인 필요: {e}")
+        st.error(f"[input_online revenue_fluxus_song] 시트 칼럼 명이 맞는지 확인 필요: {e}")
         return ""
 
     # 아티스트별 매출 정보
@@ -1477,7 +1477,7 @@ def generate_report(
         fy_col_id = header_fy.index("TRACK ID")
         fy_col_revenue = header_fy.index("권리사 정산액 \n(KRW)")
     except ValueError as e:
-        st.error(f"[input_online revenue] 시트 칼럼 명이 맞는지 확인 필요: {e}")
+        st.error(f"[input_online revenue_fluxus_yt] 시트 칼럼 명이 맞는지 확인 필요: {e}")
         return ""
 
     # 아티스트별 매출 정보
@@ -3508,7 +3508,7 @@ def generate_report(
                     row_cursor += 1
                     if len(fluxus_yt_details_sorted) == row_cursor:
                         report_fluxus_matrix[row_cursor][1] = d["album"]
-                        report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({month_val-1}월)"
+                        report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({int(month_val)-1}월)"
                         report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
                         report_fluxus_matrix[row_cursor][5] = to_currency(sum_fs_rv_val)
                         fluxus_album_sum[d["album"]] += sum_fs_rv_val
