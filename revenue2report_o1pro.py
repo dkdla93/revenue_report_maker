@@ -3568,25 +3568,9 @@ def generate_report(
                 distinct_albums = set(d["album"] for d in fluxus_fs_details_sorted)
                 album_count = len(distinct_albums)
 
-                start_data_row = header_row_1 + 1
-                end_data_row   = start_data_row + len(fluxus_yt_details_sorted) + album_count
+                start_service_row = header_row_1 + 1
+                end_service_row   = start_service_row + len(fluxus_yt_details_sorted) + album_count
                 
-
-                for r_idx in range(start_data_row, end_data_row):
-                    report_fluxus_requests.append({
-                        "mergeCells": {
-                            "range": {
-                                "sheetId": ws_fluxus_report_id,
-                                "startRowIndex": r_idx,
-                                "endRowIndex": r_idx+1,
-                                "startColumnIndex": 2,  # C열
-                                "endColumnIndex": 4     # D열+1
-                            },
-                            "mergeType": "MERGE_ALL"
-                        }
-                    })
-
-
                 row_cursor += 2
                 # 합계
                 report_fluxus_matrix[row_cursor-1][1] = "합계"
@@ -3621,21 +3605,6 @@ def generate_report(
                 report_fluxus_matrix[row_cursor-1][5] = to_currency(fluxus_sum_all)
                 row_cursor_sum2 = row_cursor
                 row_cursor += 1
-
-                # 병합 요청 누적
-                for r_idx in range(start_album_data, end_album_data):
-                    report_fluxus_requests.append({
-                        "mergeCells": {
-                            "range": {
-                                "sheetId": ws_fluxus_report_id,
-                                "startRowIndex": r_idx,
-                                "endRowIndex": r_idx+1,
-                                "startColumnIndex": 2,  # C열
-                                "endColumnIndex": 4     # D열+1
-                            },
-                            "mergeType": "MERGE_ALL"
-                        }
-                    })
 
 
                 # -----------------------------------------------------------------
@@ -4383,6 +4352,20 @@ def generate_report(
                             "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
                         }
                     })
+                # (J-6) 표에 C~D열 병합
+                for r_idx in range(start_service_row, end_service_row):
+                    report_fluxus_requests.append({
+                        "mergeCells": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "startRowIndex": r_idx,
+                                "endRowIndex": r_idx+1,
+                                "startColumnIndex": 2,  # C열
+                                "endColumnIndex": 4     # D열+1
+                            },
+                            "mergeType": "MERGE_ALL"
+                        }
+                    })
 
 
                 # (K-1) 앨범별 정산내역 타이틀
@@ -4444,7 +4427,7 @@ def generate_report(
                         "mergeType": "MERGE_ALL"
                     }
                 })
-                # (K-3) 앨범별 정산내역 표 본문
+                # (K-3_1) 앨범별 정산내역 표 본문
                 report_fluxus_requests.append({
                     "repeatCell": {
                         "range": {
@@ -4468,6 +4451,21 @@ def generate_report(
                         "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
                     }
                 })
+                # (K-3_2) 병합 요청 누적
+                for r_idx in range(start_album_data, end_album_data):
+                    report_fluxus_requests.append({
+                        "mergeCells": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "startRowIndex": r_idx,
+                                "endRowIndex": r_idx+1,
+                                "startColumnIndex": 2,  # C열
+                                "endColumnIndex": 4     # D열+1
+                            },
+                            "mergeType": "MERGE_ALL"
+                        }
+                    })                
+                
                 # (K-4) 앨범별 정산내역 합계행
                 report_fluxus_requests.append({
                     "repeatCell": {
