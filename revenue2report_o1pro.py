@@ -58,6 +58,25 @@ def get_credentials_from_secrets(which: str = "A") -> Credentials:
 # 검증(비교) 및 기타 헬퍼
 # ----------------------------------------------------------------
 
+def open_sheet_with_retry(gc, sheet_name: str, max_attempts=3):
+    for attempt in range(1, max_attempts+1):
+        try:
+            sh = gc.open(sheet_name)
+            return sh  # 성공시 반환
+        except gspread.exceptions.APIError as e:
+            # 만약 500 Internal Error라면 잠시 쉬고 재시도
+            # (HTTP 500 말고 다른 에러는 그대로 raise)
+            if "500" in str(e):
+                print(f"[WARN] 구글 스프레드시트 500에러 - {sheet_name} / 재시도 {attempt}회")
+                time.sleep(2)
+                continue
+            else:
+                # 500 외 API 에러는 재시도해봤자 의미 없을 가능성이 크므로 즉시 중단
+                raise e
+    # 여기까지 왔다는 것은 max_attempts번 시도해도 실패
+    raise RuntimeError(f"구글시트 열기 실패: {sheet_name} (500 에러 {max_attempts}회)")
+
+
 def debug_hex(s: str) -> str:
     """문자열 s의 각 문자를 유니코드 코드포인트(\\uXXXX) 형태로 변환."""
     return " ".join(f"\\u{ord(ch):04X}" for ch in s)
@@ -1297,7 +1316,7 @@ def generate_report(
 
     # ------------------- (A) input_song cost -------------------
     try:
-        song_cost_sh = gc.open("input_song cost")
+        song_cost_sh = open_sheet_with_retry(gc, "input_song cost")
     except gspread.exceptions.SpreadsheetNotFound:
         st.error("Google Sheet 'input_song cost'를 찾을 수 없습니다.")
         return ""
@@ -1366,7 +1385,7 @@ def generate_report(
 
     # ------------------- (B) input_online revenue (UMAG) -------------
     try:
-        revenue_sh = gc.open("input_online revenue_umag_integrated") #UMAG
+        revenue_sh = open_sheet_with_retry(gc, "input_online revenue_umag_integrated")
     except gspread.exceptions.SpreadsheetNotFound:
         st.error("Google Sheet 'input_online revenue_umag_integrated'를 찾을 수 없습니다.")
         return ""
@@ -1419,13 +1438,13 @@ def generate_report(
 
     # ------------------- (B) input_online revenue (FLUXUS) -------------
     try:
-        fluxus_song_sh = gc.open("input_online revenue_fluxus_song")
+        fluxus_song_sh = open_sheet_with_retry(gc, "input_online revenue_fluxus_song")
     except gspread.exceptions.SpreadsheetNotFound:
         st.error("Google Sheet 'input_online revenue_fluxus_song' 없음")
         return ""
 
     try:
-        fluxus_yt_sh = gc.open("input_online revenue_fluxus_yt")
+        fluxus_yt_sh = open_sheet_with_retry(gc, "input_online revenue_fluxus_yt")
     except gspread.exceptions.SpreadsheetNotFound:
         st.error("Google Sheet 'input_online revenue_fluxus_yt' 없음")
         return ""
