@@ -3460,7 +3460,8 @@ def generate_report(
 
                 # 1) 앨범별 매출 합산 dict
                 fluxus_album_sum = defaultdict(float)
-                
+                fs_album_sum = defaultdict(float)
+
                 # 1-A) 유튜브(yt)
                 for d in fluxus_yt_details_sorted:
                     fluxus_album_sum[d["album"]] += d["revenue"]
@@ -3468,6 +3469,7 @@ def generate_report(
                 # 1-B) 플럭서스 송(song)
                 for fs_item in fluxus_fs_details_sorted:
                     fluxus_album_sum[fs_item["album"]] += fs_item["revenue"]
+                    fs_album_sum[fs_item["album"]] += fs_item["revenue"]
 
                 # 1-C) 전체 매출 합
                 fluxus_sum_all = sum(fluxus_album_sum.values())
