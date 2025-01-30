@@ -3565,7 +3565,7 @@ def generate_report(
                         row_cursor += 1
 
 
-                distinct_albums = set(d["앨범명"] for d in fluxus_fs_details_sorted)
+                distinct_albums = set(d["album"] for d in fluxus_fs_details_sorted)
                 album_count = len(distinct_albums)
 
                 start_data_row = header_row_1 + 1
