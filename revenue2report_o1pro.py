@@ -3250,6 +3250,30 @@ def generate_report(
                             "range": {
                                 "sheetId": sheet_id_fluxus_detail,
                                 "dimension": "COLUMNS",
+                                "startIndex": 2,
+                                "endIndex": 3
+                            },
+                            "properties": {"pixelSize": 100},
+                            "fields": "pixelSize"
+                        }
+                    },
+                                        {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_fluxus_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 3,
+                                "endIndex": 4
+                            },
+                            "properties": {"pixelSize": 160},
+                            "fields": "pixelSize"
+                        }
+                    },
+                                        {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_fluxus_detail,
+                                "dimension": "COLUMNS",
                                 "startIndex": 4,
                                 "endIndex": 5
                             },
@@ -3265,7 +3289,7 @@ def generate_report(
                                 "startIndex": 5,
                                 "endIndex": 6
                             },
-                            "properties": {"pixelSize": 160},
+                            "properties": {"pixelSize": 120},
                             "fields": "pixelSize"
                         }
                     },
@@ -3276,30 +3300,6 @@ def generate_report(
                                 "dimension": "COLUMNS",
                                 "startIndex": 6,
                                 "endIndex": 7
-                            },
-                            "properties": {"pixelSize": 100},
-                            "fields": "pixelSize"
-                        }
-                    },
-                                        {
-                        "updateDimensionProperties": {
-                            "range": {
-                                "sheetId": sheet_id_fluxus_detail,
-                                "dimension": "COLUMNS",
-                                "startIndex": 7,
-                                "endIndex": 8
-                            },
-                            "properties": {"pixelSize": 120},
-                            "fields": "pixelSize"
-                        }
-                    },
-                                        {
-                        "updateDimensionProperties": {
-                            "range": {
-                                "sheetId": sheet_id_fluxus_detail,
-                                "dimension": "COLUMNS",
-                                "startIndex": 8,
-                                "endIndex": 9
                             },
                             "properties": {"pixelSize": 140},
                             "fields": "pixelSize"
