@@ -3566,7 +3566,7 @@ def generate_report(
 
 
                 start_data_row = header_row_1 + 1
-                end_data_row   = row_cursor_sum1 - 2
+                end_data_row   = start_data_row + len(fluxus_yt_details_sorted) + len(fluxus_fs_details_sorted["앨범명"])
 
                 for r_idx in range(start_data_row, end_data_row):
                     report_fluxus_requests.append({
