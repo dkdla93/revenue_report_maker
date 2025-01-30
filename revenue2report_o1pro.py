@@ -3496,7 +3496,6 @@ def generate_report(
                 fluxus_album_sum = defaultdict(float)
                 for d in fluxus_yt_details_sorted:
                     fluxus_album_sum[d["album"]] += d["revenue"]
-                fluxus_sum_album = sum(fluxus_album_sum.values())
 
                 # (A) "곡비" = "전월 잔액 + 당월 발생액" (요청 사항)
                 prev_val = artist_cost_dict[artist]["전월잔액"]
@@ -3591,7 +3590,7 @@ def generate_report(
 
                 row_cursor += 1
                 report_fluxus_matrix[row_cursor-1][1] = "합계"
-                report_fluxus_matrix[row_cursor-1][5] = to_currency(fluxus_sum_album)
+                report_fluxus_matrix[row_cursor-1][5] = to_currency(fluxus_sum_all)
                 row_cursor_sum2 = row_cursor
                 row_cursor += 1
 
