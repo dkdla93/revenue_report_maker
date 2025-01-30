@@ -8,6 +8,7 @@ import zipfile
 import requests as req
 import unicodedata
 import pandas as pd
+import itertools
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -3519,6 +3520,7 @@ def generate_report(
                 for i_h, val_h in enumerate(headers_1):
                     report_fluxus_matrix[header_row_1][1 + i_h] = val_h
 
+                row_cursor = header_row_1 + 1
 
                 import itertools
                 fluxus_yt_details_sorted = sorted(fluxus_yt_details, key=lambda d: album_sort_key(d["album"]))
