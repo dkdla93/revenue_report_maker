@@ -1143,12 +1143,27 @@ def section_three_upload_and_split_excel():
     for sn in sheet_names:
         if sn.endswith("(정산서)"):
             artist_name = sn[:-5].strip()  # '(정산서)' 제거
+            if artist_name.startswith("FLUXUS_"):
+                artist_name = artist_name[len("FLUXUS_"):]
+            elif artist_name.startswith("UMAG_"):
+                artist_name = artist_name[len("UMAG_"):]
+            else:
+                st.error(f"알 수 없는 소속 형식: {artist_name}")
+                continue
             all_pairs[artist_name]["report"] = sn
         elif sn.endswith("(세부매출내역)"):
             artist_name = sn[:-7].strip()  # '(세부매출내역)' 제거
+            if artist_name.startswith("FLUXUS_"):
+                artist_name = artist_name[len("FLUXUS_"):]
+            elif artist_name.startswith("UMAG_"):
+                artist_name = artist_name[len("UMAG_"):]
+            else:
+                st.error(f"알 수 없는 소속 형식: {artist_name}")
+                continue
             all_pairs[artist_name]["detail"] = sn
         else:
             pass  # 무시
+
 
     # 소속 정보를 위해 input_song cost에서 다시 가져올 수도 있음
     # 여기서는 단순 예시
@@ -1594,6 +1609,8 @@ def generate_report(
             elif one_sosok == "FLUXUS":
                 needed_titles.append(f"{one_sosok}_{artist}(세부매출내역)")
                 needed_titles.append(f"{one_sosok}_{artist}(정산서)")
+            else:
+                print(f"unknown 소속: {one_sosok}")
     batch_add_sheets(out_file_id, sheet_svc, needed_titles)
 
 
