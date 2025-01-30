@@ -3551,13 +3551,16 @@ def generate_report(
 
                 row_cursor = header_row_1 + 1
                 for d in fluxus_yt_details_sorted:
+                    album_count_index = 0
+                    album_count = len(d["album"])
                     rv = d["revenue"]
                     report_fluxus_matrix[row_cursor][1] = d["album"]
                     report_fluxus_matrix[row_cursor][2] = d["track_title"]
                     report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
                     report_fluxus_matrix[row_cursor][5] = to_currency(rv)
                     row_cursor += 1
-                    if len(fluxus_yt_details_sorted) == row_cursor-14:
+                    album_count_index += 1
+                    if album_count_index == album_count:
                         report_fluxus_matrix[row_cursor][1] = d["album"]
                         report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({int(month_val)-1}월)"
                         report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
