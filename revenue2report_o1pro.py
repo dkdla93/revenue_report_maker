@@ -735,8 +735,8 @@ def section_zero_prepare_song_cost():
                 continue
 
             sosok_str = row_data[idx_sosok_n].strip().upper()
-            splitted = re.split(r'[,&/]', sosok_str)  # "UMAG,FLUXUS" → ["UMAG","FLUXUS"]
-            splitted = [x.strip() for x in splitted if x.strip()]
+            affils = re.split(r'[,&/]', sosok_str)  # "UMAG,FLUXUS" → ["UMAG","FLUXUS"]
+            affils = [x.strip() for x in affils if x.strip()]
 
             try:
                 curr_val_str = row_data[idx_curr_n].replace(",","")
@@ -748,7 +748,7 @@ def section_zero_prepare_song_cost():
 
             # 모든 소속매출 합산
             total_revenue = 0.0
-            for one_sosok in splitted:
+            for one_sosok in affils:
                 if one_sosok == "UMAG":
                     total_revenue += sum_umag_dict.get(artist_n, 0.0)
                 elif one_sosok == "FLUXUS":
@@ -781,15 +781,15 @@ def section_zero_prepare_song_cost():
         # 곡비파일(body_new)에서 소속을 보고 카운팅
         for row_data in body_new:
             sosok_str = row_data[idx_sosok_n].strip().upper()
-            splitted = re.split(r'[,&/]', sosok_str)
-            splitted = [x.strip() for x in splitted if x.strip()]
+            affils = re.split(r'[,&/]', sosok_str)
+            affils = [x.strip() for x in affils if x.strip()]
 
             # 소속 문자열 안에 "UMAG"가 있으면 UMAG 카운트
-            if "UMAG" in splitted:
+            if "UMAG" in affils:
                 umag_count_artists += 1
 
             # 소속 문자열 안에 "FLUXUS"가 있으면 FLUXUS 카운트
-            if "FLUXUS" in splitted:
+            if "FLUXUS" in affils:
                 fluxus_count_artists += 1
 
         # 매출 인풋파일들의 "원본" 행 개수
@@ -819,15 +819,15 @@ def section_zero_prepare_song_cost():
         for row_data in body_new:
             artist_n = clean_artist_name(row_data[idx_artist_n])
             sosok_str = row_data[idx_sosok_n].strip().upper()
-            splitted = re.split(r'[,&/]', sosok_str)
-            splitted = [x.strip() for x in splitted if x.strip()]
+            affils = re.split(r'[,&/]', sosok_str)
+            affils = [x.strip() for x in affils if x.strip()]
 
             # 소속 중에 UMAG가 하나라도 있으면 => umag_artists_from_cost.add(artist_n)
-            if "UMAG" in splitted:
+            if "UMAG" in affils:
                 umag_artists_from_cost.add(artist_n)
 
             # 소속 중에 FLUXUS가 하나라도 있으면 => fluxus_artists_from_cost.add(artist_n)
-            if "FLUXUS" in splitted:
+            if "FLUXUS" in affils:
                 fluxus_artists_from_cost.add(artist_n)
 
 
@@ -1016,6 +1016,13 @@ def section_zero_prepare_song_cost():
 # (B) "1) 정산 보고서 정보 입력 항목" 섹션
 # ------------------------------------------------------------------------------
 def section_one_report_input():
+    """
+    UMAG 아티스트: 기존과 동일한 형식
+    FLUXUS 아티스트: 정산서와 세부매출내역의 칼럼 구조를 변경
+    - (정산서) -> [앨범, 내용, 기간, 매출액]
+    - (세부매출내역) -> [앨범아티스트, 앨범명, 트랙 No., 트랙명, 매출 순수익]
+    - 중복소속(UMAG+FLUXUS)인 아티스트는 제외.
+    """
     st.subheader("1) 정산 보고서 정보 입력 항목")
 
     default_ym = st.session_state.get("ym", "")
@@ -1044,14 +1051,11 @@ def section_one_report_input():
         drive_svc_a = build("drive", "v3", credentials=creds_a)
         sheet_svc_a = build("sheets", "v4", credentials=creds_a)
 
-        check_dict = {
-            "song_artists": [],
-            "revenue_artists": [],
-            "artist_compare_result": {}
-        }
-
+        check_dict = {}
         out_file_id = generate_report(
-            ym, report_date, check_dict,
+            ym=ym,
+            report_date=report_date,
+            check_dict=check_dict,
             gc=gc_a,
             drive_svc=drive_svc_a,
             sheet_svc=sheet_svc_a,
@@ -1064,11 +1068,6 @@ def section_one_report_input():
         st.session_state["check_dict"] = check_dict
 
         st.success(f"보고서 생성 완료! file_id={out_file_id}")
-        if out_file_id:
-            artist_placeholder.success("모든 아티스트 정산 보고서 생성 완료!")
-            time.sleep(1)
-            artist_placeholder.empty()
-            progress_bar.empty()
 
 
 # ------------------------------------------------------------------------------
@@ -1086,23 +1085,15 @@ def section_two_sheet_link_and_verification():
                 gsheet_url = f"https://docs.google.com/spreadsheets/d/{out_file_id}/edit"
                 st.write(f"**생성된 구글시트 링크:** {gsheet_url}")
 
-            cd = st.session_state.get("check_dict", {})
-            if cd:
-                # 여기에 필요한 검증 결과 요약 표시
-                st.write("검증 결과 요약:")
-                st.write(cd.get("artist_compare_result"))
-            else:
-                st.info("검증 데이터 없음")
-
-            # 2개 소속 중복된 아티스트 안내
+            # 중복 소속 아티스트 안내
             double_sosok_list = st.session_state.get("excluded_double_sosok", [])
             if double_sosok_list:
-                st.warning(f"2개 소속 중복으로 작업 제외된 아티스트: {double_sosok_list}")
+                st.warning(f"2개 소속 중복으로 작업 제외된 아티스트 목록: {double_sosok_list}")
+                st.info("해당 아티스트는 '2개 소속이 되어 진행이 되지 않았습니다' 문구가 노출됩니다.")
 
         with tab2:
             st.write("### 세부 검증 내용")
-            st.info("인풋데이터 vs 산출결과 비교")
-            # show_detailed_verification() 같은 함수 호출
+            show_detailed_verification()
 
     else:
         st.info("정산 보고서 생성 완료 후 확인 가능합니다.")
@@ -1113,11 +1104,8 @@ def section_two_sheet_link_and_verification():
 # ------------------------------------------------------------------------------
 def section_three_upload_and_split_excel():
     """
-    (수정 버전)
-    1) 사용자가 "output_report_YYYYMM.xlsx" (구글시트에서 다운로드)를 업로드
-    2) 각 '아티스트(정산서)' 탭 + '아티스트(세부매출내역)' 탭을 묶어서
-       → '소속_정산보고서_아티스트명_YYYYMM.xlsx' 로 저장
-    3) 모든 아티스트 파일을 하나의 ZIP으로 다운로드
+    곡비-보고서 통합 완료 후, 최종 생성된 구글시트(Excel 다운로드본)를
+    다시 업로드하여 아티스트별 XLSX로 분할 & ZIP으로 다운로드
     """
     if "report_done" not in st.session_state or not st.session_state["report_done"]:
         st.info("정산 보고서가 먼저 생성된 뒤에, 엑셀 업로드 가능합니다.")
@@ -1139,7 +1127,6 @@ def section_three_upload_and_split_excel():
     progress_bar = st.progress(0.0)
     progress_text = st.empty()
 
-    # A) 전체 엑셀 로드
     original_file_data = uploaded_file.read()
     try:
         wb_all = openpyxl.load_workbook(io.BytesIO(original_file_data))
@@ -1149,38 +1136,22 @@ def section_three_upload_and_split_excel():
 
     sheet_names = wb_all.sheetnames
 
-    # B) '아티스트(정산서)', '아티스트(세부매출내역)' 페어를 찾아서 처리
-    #    예) "홍길동(정산서)", "홍길동(세부매출내역)"
-    #    아티스트명 추출: 탭이름.split("(")[0] (단, 주의)
-    #    소속: 탭 안쪽 데이터 1행 or input_song cost에서?
-
-    # 여기서는 탭 이름 형식 "[아티스트명](정산서)" vs "[아티스트명](세부매출내역)" 만 있다고 가정.
-    # 실제로는 '소속'을 알기 위해서, "input_song cost"를 다시 참조하거나
-    # 또는 보고서 시트 내부에 '소속' 정보를 감춰둔 셀에서 읽어올 수도 있습니다.
-    # 간단히는, 탭 데이터 2~3행에 소속 표기했거나, 세션에 저장했을 수도.
-    # 여기서는 예시로, 탭 이름 내 "UMAG_" or "FLUXUS_" 같은 식으로 만들었다고 가정하셔도 됩니다.
-
-    # 본 예시에서는 "소속" 정보를 알 수 없다면, 일단 "UNKNOWN"으로 처리
-    # 실제 구현 시에는 generate_report할 때 탭 이름에 "[소속]아티스트명(정산서)" 식으로 지어주면 더 간단.
-    # 여기서는 "input_song cost"를 다시 열어 mapping table을 구성한다고 가정합니다.
-
-    # 우선 아티스트 목록
+    # 아티스트별 (정산서, 세부매출내역) 탭 매칭
+    from collections import defaultdict
     all_pairs = defaultdict(lambda: {"report": None, "detail": None})
 
     for sn in sheet_names:
         if sn.endswith("(정산서)"):
-            artist_name = sn[:-5]  # '(정산서)' 제거
-            artist_name = artist_name.strip()
+            artist_name = sn[:-5].strip()  # '(정산서)' 제거
             all_pairs[artist_name]["report"] = sn
         elif sn.endswith("(세부매출내역)"):
-            artist_name = sn[:-7]  # '(세부매출내역)' 제거
-            artist_name = artist_name.strip()
+            artist_name = sn[:-7].strip()  # '(세부매출내역)' 제거
             all_pairs[artist_name]["detail"] = sn
         else:
-            pass  # 무시(합계시트 등 다른 시트가 있을 수 있음)
+            pass  # 무시
 
-    # (옵션) 소속 정보를 가져오기 위해 다시 "input_song cost" 열어서, ym탭에서 dict 생성
-    #        artist_sosok_dict[아티스트명] = "UMAG" or "FLUXUS" ...
+    # 소속 정보를 위해 input_song cost에서 다시 가져올 수도 있음
+    # 여기서는 단순 예시
     artist_sosok_dict = {}
     try:
         creds_a = get_credentials_from_secrets("A")
@@ -1198,20 +1169,16 @@ def section_three_upload_and_split_excel():
                     idx_s = hdr_sc.index("소속")
                 except:
                     idx_a, idx_s = -1, -1
+
                 for row_sc in data_sc[1:]:
                     a = row_sc[idx_a].strip() if idx_a>=0 else ""
                     s = row_sc[idx_s].strip().upper() if idx_s>=0 else ""
                     if a and s:
-                        # 혹시 중복 기재라면?
-                        # 일단 마지막 값으로 덮어씀
-                        # (실제로는 더 정교한 로직 가능)
                         artist_sosok_dict[a] = s
-        else:
-            pass
     except:
         pass
 
-    # C) ZIP 버퍼 준비
+    # ZIP
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         total_pairs = len(all_pairs)
@@ -1223,36 +1190,34 @@ def section_three_upload_and_split_excel():
             ws_report_name = pair_info["report"]
             ws_detail_name = pair_info["detail"]
             if not ws_report_name or not ws_detail_name:
-                # 한쪽 탭만 존재하는 경우는 스킵
+                # 한쪽 탭만 있는 경우는 skip
                 continue
 
-            # 소속
             sosok = artist_sosok_dict.get(artist, "UNKNOWN")
 
-            # (1) 새 워크북 생성
+            # 새 워크북
             temp_wb = openpyxl.Workbook()
-            # 기본 생성 시트 제거
             def_ws = temp_wb.active
             temp_wb.remove(def_ws)
 
-            # (2) 원본에서 "정산서" 탭 복사
+            # (1) 정산서 복사
             orig_ws_report = wb_all[ws_report_name]
             new_ws_report = temp_wb.create_sheet(ws_report_name)
             copy_sheet(orig_ws_report, new_ws_report)
 
-            # (3) 원본에서 "세부매출내역" 탭 복사
+            # (2) 세부매출내역 복사
             orig_ws_detail = wb_all[ws_detail_name]
             new_ws_detail = temp_wb.create_sheet(ws_detail_name)
             copy_sheet(orig_ws_detail, new_ws_detail)
 
-            # (4) 파일명: f"{소속}_정산보고서_{artist}_{current_ym}.xlsx"
+            # 파일명 "소속_정산보고서_아티스트명_YYYYMM.xlsx"
+            current_ym = st.session_state.get("ym", "000000")
             safe_artist = artist.replace("/", "_").replace("\\", "_")
             filename_xlsx = f"{sosok}_정산보고서_{safe_artist}_{current_ym}.xlsx"
 
             single_buf = io.BytesIO()
             temp_wb.save(single_buf)
             single_buf.seek(0)
-
             zf.writestr(filename_xlsx, single_buf.getvalue())
 
     zip_buf.seek(0)
@@ -1267,9 +1232,7 @@ def section_three_upload_and_split_excel():
 
 def copy_sheet(src_ws, dst_ws):
     """
-    src_ws(Openpyxl worksheet) → dst_ws(Openpyxl worksheet)에 셀 값/서식 등 복사
-    - openpyxl은 완벽한 서식 복제가 쉽지 않으므로, 여기서는 가장 기본적인 값/스타일만 복사
-    - 필요시 엑셀 스타일 속성(border/fill/font/alignment 등)을 더 옮겨줄 수 있음
+    openpyxl에서 시트 전체를 복제할 때, 서식/너비 등을 옮기는 간단한 예시
     """
     from copy import copy
     max_row = src_ws.max_row
@@ -1288,9 +1251,9 @@ def copy_sheet(src_ws, dst_ws):
                 cell_dst.protection = copy(cell_src.protection)
                 cell_dst.alignment = copy(cell_src.alignment)
     for c in range(1, max_col+1):
-        dst_ws.column_dimensions[openpyxl.utils.get_column_letter(c)].width = src_ws.column_dimensions[openpyxl.utils.get_column_letter(c)].width
-
-
+        dst_ws.column_dimensions[openpyxl.utils.get_column_letter(c)].width = (
+            src_ws.column_dimensions[openpyxl.utils.get_column_letter(c)].width
+        )
 
 
 # ========== [4] 핵심 로직: generate_report =============
@@ -1339,6 +1302,7 @@ def generate_report(
 
     # 이번에 '당월 발생액' 칼럼까지 사용하므로 인덱스 추가
     try:
+        idx_sosok  = header_sc.index("소속")  # ← 추가
         idx_artist = header_sc.index("아티스트명")
         idx_rate   = header_sc.index("정산 요율")
         idx_prev   = header_sc.index("전월 잔액")
@@ -1360,10 +1324,18 @@ def generate_report(
     #   → '전월 잔액'(prev), '당월 발생액'(curr), '당월 차감'(deduct), '당월 잔액'(remain), '정산요율'(rate)
     #   (실제 작업에서는 나중에 '곡비' = prev + curr)
     artist_cost_dict = {}
+    artist_sosok_dict = {}  # ← 새로 추가
+
     for row in rows_sc:
         artist_name = row[idx_artist].strip()
         if not artist_name:
             continue
+
+        sosok_str = row[idx_sosok].strip().upper()  # "UMAG", "FLUXUS", "UMAG,FLUXUS" 등
+        # 만약 쉼표 등으로 여러 소속일 수 있다면 split
+        affils = re.split(r'[,&/]', sosok_str)  # ["UMAG","FLUXUS"] 등
+        affils = [x.strip() for x in affils if x.strip()]
+
         cost_data = {
             "정산요율": to_num(row[idx_rate]),
             "전월잔액": to_num(row[idx_prev]),
@@ -1373,10 +1345,13 @@ def generate_report(
         }
         artist_cost_dict[artist_name] = cost_data
 
+        # artist_sosok_dict에도 넣는다
+        artist_sosok_dict[artist_name] = affils  # 예: ["UMAG"], ["FLUXUS"], ["UMAG","FLUXUS"], ...
 
-    # ------------------- (B) input_online revenue -------------
+
+    # ------------------- (B) input_online revenue (UMAG) -------------
     try:
-        revenue_sh = gc.open("input_online revenue")
+        revenue_sh = gc.open("input_online revenue") #UMAG
     except gspread.exceptions.SpreadsheetNotFound:
         st.error("Google Sheet 'input_online revenue'를 찾을 수 없습니다.")
         return ""
@@ -1392,7 +1367,7 @@ def generate_report(
         return ""
 
     header_or = data_or[0]
-    rows_or = data_or[1:]
+    rows_or = data_or[1:-2]
     try:
         col_aartist = header_or.index("앨범아티스트")
         col_album   = header_or.index("앨범명")
@@ -1427,6 +1402,130 @@ def generate_report(
             "revenue": rv_val
         })
 
+    # ------------------- (B) input_online revenue (FLUXUS) -------------
+    try:
+        fluxus_song_sh = gc.open("input_online revenue_fluxus_song")
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error("Google Sheet 'input_online revenue_fluxus_song' 없음")
+        return ""
+
+    try:
+        fluxus_yt_sh = gc.open("input_online revenue_fluxus_yt")
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error("Google Sheet 'input_online revenue_fluxus_yt' 없음")
+        return ""
+
+    # 여기서 fluxus_song_sh / fluxus_yt_sh 중 ym 탭 존재 여부, get_all_values() 로 읽는 로직, 
+    # 그리고 '가수명'(혹은 'ALBIM ARTIST') + '권리사 정산액' 칼럼 파싱 등을 하시면 됩니다.
+    # 예시:
+    ws_map_fs = {ws.title: ws for ws in fluxus_song_sh.worksheets()}
+    if ym not in ws_map_fs:
+        st.error(f"fluxus_song '{ym}' 탭 없음")
+        return
+    ws_fs = ws_map_fs[ym]
+    data_fs = ws_fs.get_all_values()
+
+    ws_map_fy = {ws.title: ws for ws in fluxus_yt_sh.worksheets()}
+    if ym not in ws_map_fy:
+        st.error(f"fluxus_yt '{ym}' 탭 없음")
+        return
+    ws_fy = ws_map_fy[ym]
+    data_fy = ws_fy.get_all_values()
+
+
+    header_fs = data_fs[0]
+    rows_fs = data_fs[1:-1]
+    try:
+        fs_col_aartist = header_fs.index("가수명")
+        fs_col_album   = header_fs.index("앨범명")
+        fs_col_country = header_fs.index("서비스 구분")
+        fs_col_revenue = header_fs.index("권리사 정산액")
+    except ValueError as e:
+        st.error(f"[input_online revenue] 시트 칼럼 명이 맞는지 확인 필요: {e}")
+        return ""
+
+    # 아티스트별 매출 정보
+    from collections import defaultdict
+    fluxus_song_dict = defaultdict(list)
+    sum_fs_rv_val = 0.0
+    for row in rows_fs:
+        a = row[fs_col_aartist].strip()
+        if not a:
+            continue
+        fs_alb = row[fs_col_album]
+        fs_ctry = row[fs_col_country]
+        try:
+            fs_rv_val = float(row[fs_col_revenue].replace(",", ""))
+        except:
+            fs_rv_val = 0.0
+        sum_fs_rv_val += fs_rv_val
+        fluxus_song_dict[a].append({
+            "album": fs_alb,
+            "country": fs_ctry,
+            "revenue": fs_rv_val,
+            "sum_fs_rv_val": sum_fs_rv_val
+        })
+
+
+    header_fy = data_fy[0]
+    rows_fy = data_fy[1:]
+    try:
+        fy_col_aartist = header_fy.index("ALBIM ARTIST")
+        fy_col_album   = header_fy.index("ALBUM TITLE")
+        fy_col_title   = header_fy.index("TRACK TITLE")
+        fy_col_number  = header_fy.index("TRACK NO.")
+        fy_col_id = header_fy.index("TRACK ID")
+        fy_col_revenue = header_fy.index("권리사 정산액 \n(KRW)")
+    except ValueError as e:
+        st.error(f"[input_online revenue] 시트 칼럼 명이 맞는지 확인 필요: {e}")
+        return ""
+
+    # 아티스트별 매출 정보
+    from collections import defaultdict
+    fluxus_yt_dict = defaultdict(list)
+    sum_fy_rv_val = 0.0
+    for row in rows_fy:
+        a = row[fy_col_aartist].strip()
+        if not a:
+            continue
+        fy_alb = row[fy_col_album]
+        fy_title = row[fy_col_title]
+        fy_number = row[fy_col_number]
+        fy_id = row[fy_col_id]
+        try:
+            fy_rv_val = float(row[fy_col_revenue].replace(",", ""))
+        except:
+            fy_rv_val = 0.0
+        sum_fy_rv_val += fy_rv_val
+        fluxus_yt_dict[a].append({
+            "album": fy_alb,
+            "track_title": fy_title,
+            "track_number": fy_number,
+            "track_id": fy_id,
+            "revenue": fy_rv_val,
+            "sum_fy_rv_val": sum_fy_rv_val
+        })
+
+
+    for artist, val in fluxus_song_dict.items():
+        # val이 매출액 float 라면, "앨범명", "서비스명" 등도 함께 append 해야 할 수도 있음
+        # 예시(단순화):
+        fluxus_song_dict[artist].append({
+            "album":  fs_alb,
+            "country": fs_ctry,
+            "revenue": fs_rv_val,
+            "sum_fs_rv_val": sum_fs_rv_val
+        })
+
+    for artist, val in fluxus_yt_dict.items():
+        fluxus_yt_dict[artist].append({
+            "album": fy_alb,
+            "track_title": fy_title,
+            "track_number": fy_number,
+            "track_id": fy_id,
+            "revenue": fy_rv_val,
+            "sum_fy_rv_val": sum_fy_rv_val
+        })
 
     # ---------------------------------------------------------
     # [추가] check_dict 내부 구조 확인 / 초기화
@@ -1443,6 +1542,12 @@ def generate_report(
         }
     if "details_per_artist" not in check_dict:
         check_dict["details_per_artist"] = {}
+
+    if "fluxus_verification" not in check_dict:
+        check_dict["fluxus_verification"] = {
+            "정산서": [],
+            "세부매출": []
+        }
 
     # 아티스트 목록 검증
     song_artists = [r[idx_artist] for r in rows_sc if r[idx_artist]]
@@ -1481,8 +1586,14 @@ def generate_report(
     # 시트 생성(batch)
     needed_titles = []
     for artist in all_artists:
-        needed_titles.append(f"{artist}(세부매출내역)")
-        needed_titles.append(f"{artist}(정산서)")
+        affils = artist_sosok_dict[artist]
+        for one_sosok in affils:
+            if one_sosok == "UMAG":
+                needed_titles.append(f"{one_sosok}_{artist}(세부매출내역)")
+                needed_titles.append(f"{one_sosok}_{artist}(정산서)")
+            elif one_sosok == "FLUXUS":
+                needed_titles.append(f"{one_sosok}_{artist}(세부매출내역)")
+                needed_titles.append(f"{one_sosok}_{artist}(정산서)")
     batch_add_sheets(out_file_id, sheet_svc, needed_titles)
 
 
@@ -1493,1550 +1604,3165 @@ def generate_report(
     all_requests = []  # batchUpdate requests 모음
 
     for i, artist in enumerate(all_artists):
-        # 진행률
-        ratio = (i + 1) / len(all_artists)
-        progress_bar.progress(ratio)
-        artist_placeholder.info(f"[{i+1}/{len(all_artists)}] '{artist}' 처리 중...")
+        affils = artist_sosok_dict[artist]
 
-        # (1) 세부매출내역 탭
-        ws_detail = out_sh.worksheet(f"{artist}(세부매출내역)")
-        details = artist_revenue_dict[artist]
-        details_sorted = sorted(details, key=lambda d: album_sort_key(d["album"]))
+        for one_sosok in affils:
+            #-------------------------------------------------------------------------
+            # UMAG 소속 처리
+            #-------------------------------------------------------------------------
+            if one_sosok == "UMAG":
+                # 진행률
+                ratio = (i + 1) / len(all_artists)
+                progress_bar.progress(ratio)
+                artist_placeholder.info(f"[{i+1}/{len(all_artists)}] '{artist}' 처리 중...")
 
-        detail_matrix = []
-        detail_matrix.append(["앨범아티스트","앨범명","대분류","중분류","서비스명","기간","매출 순수익"])
+                # ##################################
+                # UMAG 세부매출내역 탭 (batchUpdate 방식)
+                # ##################################
+                ws_detail = out_sh.worksheet(f"{one_sosok}_{artist}(세부매출내역)")
+                details = artist_revenue_dict[artist]
+                details_sorted = sorted(details, key=lambda d: album_sort_key(d["album"]))
 
-        total_det = 0
-        for d in details_sorted:
-            rv = d["revenue"]
-            total_det += rv
-            detail_matrix.append([
-                artist,
-                d["album"],
-                d["major"],
-                d["middle"],
-                d["service"],
-                f"{year_val}년 {month_val}월",
-                to_currency(rv)
-            ])
+                detail_matrix = []
+                detail_matrix.append(["앨범아티스트","앨범명","대분류","중분류","서비스명","기간","매출 순수익"])
 
-        # 합계
-        detail_matrix.append(["합계","","","","","", to_currency(total_det)])
-        row_cursor_detail_end = len(detail_matrix)
+                total_det = 0
+                for d in details_sorted:
+                    rv = d["revenue"]
+                    total_det += rv
+                    detail_matrix.append([
+                        artist,
+                        d["album"],
+                        d["major"],
+                        d["middle"],
+                        d["service"],
+                        f"{year_val}년 {month_val}월",
+                        to_currency(rv)
+                    ])
 
-        # 시트 업데이트
-        ws_detail.update("A1", detail_matrix)
-        time.sleep(1)
+                # 합계
+                detail_matrix.append(["합계","","","","","", to_currency(total_det)])
+                row_cursor_detail_end = len(detail_matrix)
 
-        # 세부매출내역 탭에 대한 서식/테두리 등 batch 요청
-        detail_requests = []
-        sheet_id_detail = ws_detail.id
+                # 시트 업데이트
+                ws_detail.update("A1", detail_matrix)
+                time.sleep(1)
 
-        # (A) 시트 크기(row_cursor_detail_end, 7열)
-        detail_requests.append({
-            "updateSheetProperties": {
-                "properties": {
-                    "sheetId": sheet_id_detail,
-                    "gridProperties": {
-                        "rowCount": row_cursor_detail_end,
-                        "columnCount": 7
+                # 세부매출내역 탭에 대한 서식/테두리 등 batch 요청
+                detail_requests = []
+                sheet_id_detail = ws_detail.id
+
+                # (A) 시트 크기(row_cursor_detail_end, 7열)
+                detail_requests.append({
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": sheet_id_detail,
+                            "gridProperties": {
+                                "rowCount": row_cursor_detail_end,
+                                "columnCount": 7
+                            }
+                        },
+                        "fields": "gridProperties(rowCount,columnCount)"
                     }
-                },
-                "fields": "gridProperties(rowCount,columnCount)"
-            }
-        })
+                })
 
-        # (B) 열너비 설정 (A=0, B=1, ...)
-        # 예: A열(0) → 140, B열(1) → 140, E열(4) → 120
-        detail_requests.extend([
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": sheet_id_detail,
-                        "dimension": "COLUMNS",
-                        "startIndex": 0, 
-                        "endIndex": 1
+                # (B) 열너비 설정 (A=0, B=1, ...)
+                # 예: A열(0) → 140, B열(1) → 140, E열(4) → 120
+                detail_requests.extend([
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 0, 
+                                "endIndex": 1
+                            },
+                            "properties": {"pixelSize": 140},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 140},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": sheet_id_detail,
-                        "dimension": "COLUMNS",
-                        "startIndex": 1,
-                        "endIndex": 2
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 1,
+                                "endIndex": 2
+                            },
+                            "properties": {"pixelSize": 140},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 140},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": sheet_id_detail,
-                        "dimension": "COLUMNS",
-                        "startIndex": 4,
-                        "endIndex": 5
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 4,
+                                "endIndex": 5
+                            },
+                            "properties": {"pixelSize": 120},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 120},
-                    "fields": "pixelSize"
+                ])
+
+                # (C) 헤더(A1~G1) 포맷
+                detail_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id_detail,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red":1.0, "green":0.8, "blue":0.0},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True,
+                                    "foregroundColor": {"red":0,"green":0,"blue":0}
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+                # (D) 합계행 병합 + 서식
+                sum_row_0based = row_cursor_detail_end - 1
+                detail_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheet_id_detail,
+                            "startRowIndex": sum_row_0based,
+                            "endRowIndex": sum_row_0based+1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 6
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                detail_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id_detail,
+                            "startRowIndex": sum_row_0based,
+                            "endRowIndex": sum_row_0based+1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red":1.0,"green":0.8,"blue":0.0},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {"bold": True}
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # 합계값(G열)에 오른쪽 정렬
+                detail_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id_detail,
+                            "startRowIndex": sum_row_0based,
+                            "endRowIndex": sum_row_0based+1,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT",
+                                "textFormat": {"bold": True}
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
+                    }
+                })
+                # 매출 순수익 칼럼 (F열=idx=6) 나머지 행들
+                detail_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id_detail,
+                            "startRowIndex": 1,
+                            "endRowIndex": sum_row_0based,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT"
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment)"
+                    }
+                })
+
+                # (E) 전체 테두리
+                detail_requests.append({
+                    "updateBorders": {
+                        "range": {
+                            "sheetId": sheet_id_detail,
+                            "startRowIndex": 0,
+                            "endRowIndex": row_cursor_detail_end,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 7
+                        },
+                        "top":    {"style":"SOLID","width":1},
+                        "bottom": {"style":"SOLID","width":1},
+                        "left":   {"style":"SOLID","width":1},
+                        "right":  {"style":"SOLID","width":1},
+                        "innerHorizontal": {"style":"SOLID","width":1},
+                        "innerVertical":   {"style":"SOLID","width":1}
+                    }
+                })
+
+                all_requests.extend(detail_requests)
+
+                # (호출 횟수 분할) 1회 batchUpdate 요청이 너무 커지면 나눠서 전송
+                if len(all_requests) >= 200:
+                    sheet_svc.spreadsheets().batchUpdate(
+                        spreadsheetId=out_file_id,
+                        body={"requests": all_requests}
+                    ).execute()
+                    all_requests.clear()
+                    time.sleep(1)
+
+                # ##################################
+                # UMAG 정산서 탭 (batchUpdate 방식)
+                # ##################################
+                ws_report = out_sh.worksheet(f"{one_sosok}_{artist}(정산서)")
+                ws_report_id = ws_report.id
+
+                # 매출 합
+                sum_1 = sum(d["revenue"] for d in details_sorted)  # "음원서비스별" 총합
+                # 앨범별 합
+                album_sum = defaultdict(float)
+                for d in details_sorted:
+                    album_sum[d["album"]] += d["revenue"]
+                sum_2 = sum(album_sum.values())
+
+                # (A) "곡비" = "전월 잔액 + 당월 발생액" (요청 사항)
+                prev_val = artist_cost_dict[artist]["전월잔액"]
+                curr_val = artist_cost_dict[artist]["당월발생"]
+                # 보고서 '3. 공제 내역'의 '곡비' 칼럼 값 = prev_val + curr_val
+                song_cost_for_report = prev_val + curr_val
+
+                # (B) 공제 금액 & 잔액
+                deduct_val = artist_cost_dict[artist]["당월차감액"]  # 이미 input_song cost에서 계산된 값
+                remain_val = artist_cost_dict[artist]["당월잔액"]   # 동일
+                # "공제 적용 후" 매출 = (음원 매출 합) - 공제금액 => sum_2 - deduct_val
+                # (단, 요청 사항/업무로직에 따라 정확히 어떻게 적용할지는 케이스별로 맞춤)
+
+                # (C) 정산율 / 최종 정산금액
+                rate_val = artist_cost_dict[artist]["정산요율"]
+                공제적용후 = sum_2 - deduct_val
+                final_amount = 공제적용후 * (rate_val / 100.0)
+                
+
+                # --------------------------------------
+                # 정산서 테이블(직접 row col 배열 채우기)
+                # --------------------------------------
+                report_matrix = []
+                for _ in range(300):
+                    report_matrix.append([""] * 8)
+
+                # 1) 상단 공통정보
+                report_matrix[1][6] = report_date   # 보고서 발행일
+                report_matrix[3][1] = f"{year_val}년 {month_val}월 판매분"
+                report_matrix[5][1] = f"{artist}님 음원 정산 내역서"
+
+                report_matrix[7][0] = "•"
+                report_matrix[7][1] = "저희와 함께해 주셔서 정말 감사하고 앞으로도 잘 부탁드리겠습니다!"
+                report_matrix[8][0] = "•"
+                report_matrix[8][1] = f"{year_val}년 {month_val}월 음원의 수익을 아래와 같이 정산드리오니 참고 부탁드립니다."
+                report_matrix[9][0] = "•"
+                report_matrix[9][1] = "정산 관련하여 문의사항이 있다면 무엇이든, 언제든 편히 메일 주세요!"
+                report_matrix[9][5] = "E-Mail : lucasdh3013@naver.com"
+
+                # -----------------------------------------------------------------
+                # 1. 음원 서비스별 정산내역 (세부매출 그대로)
+                # -----------------------------------------------------------------
+                report_matrix[12][0] = "1."
+                report_matrix[12][1] = "음원 서비스별 정산내역"
+
+                header_row_1 = 13
+                headers_1 = ["앨범", "대분류", "중분류", "서비스명", "기간", "매출액"]
+                for i_h, val_h in enumerate(headers_1):
+                    report_matrix[header_row_1][1 + i_h] = val_h
+
+                row_cursor = header_row_1 + 1
+                for d in details_sorted:
+                    rv = d["revenue"]
+                    report_matrix[row_cursor][1] = d["album"]
+                    report_matrix[row_cursor][2] = d["major"]
+                    report_matrix[row_cursor][3] = d["middle"]
+                    report_matrix[row_cursor][4] = d["service"]
+                    report_matrix[row_cursor][5] = f"{year_val}년 {month_val}월"
+                    report_matrix[row_cursor][6] = to_currency(rv)
+                    row_cursor += 1
+
+                row_cursor += 2
+                # 합계
+                report_matrix[row_cursor-1][1] = "합계"
+                report_matrix[row_cursor-1][6] = to_currency(sum_1)
+                row_cursor_sum1 = row_cursor
+                row_cursor += 1
+
+                # -----------------------------------------------------------------
+                # 2. 앨범 별 정산 내역
+                # -----------------------------------------------------------------
+                report_matrix[row_cursor][0] = "2."
+                report_matrix[row_cursor][1] = "앨범 별 정산 내역"
+                row_cursor += 1
+                row_cursor_album = row_cursor
+                report_matrix[row_cursor][1] = "앨범"
+                report_matrix[row_cursor][5] = "기간"
+                report_matrix[row_cursor][6] = "매출액"
+                row_cursor += 1
+
+                for alb in sorted(album_sum.keys(), key=album_sort_key):
+                    amt = album_sum[alb]
+                    report_matrix[row_cursor][1] = alb
+                    report_matrix[row_cursor][5] = f"{year_val}년 {month_val}월"
+                    report_matrix[row_cursor][6] = to_currency(amt)
+                    row_cursor += 1
+
+                row_cursor += 1
+                report_matrix[row_cursor-1][1] = "합계"
+                report_matrix[row_cursor-1][6] = to_currency(sum_2)
+                row_cursor_sum2 = row_cursor
+                row_cursor += 1
+
+                # -----------------------------------------------------------------
+                # 3. 공제 내역
+                #    (요청사항: '곡비' 칼럼 = (전월 잔액 + 당월 발생액))
+                # -----------------------------------------------------------------
+                report_matrix[row_cursor][0] = "3."
+                report_matrix[row_cursor][1] = "공제 내역"
+                row_cursor += 1
+                row_cursor_deduction = row_cursor
+
+                report_matrix[row_cursor][1] = "앨범"
+                report_matrix[row_cursor][2] = "곡비"
+                report_matrix[row_cursor][3] = "공제 금액"
+                report_matrix[row_cursor][5] = "공제 후 남은 곡비"
+                report_matrix[row_cursor][6] = "공제 적용 금액"
+                row_cursor += 1
+
+                # 앨범(들)을 표기만 할지, 혹은 여러줄로 표현할지 등은 업무 규칙에 따라
+                alb_list = sorted(album_sum.keys(), key=album_sort_key)
+                alb_str = ", ".join(alb_list) if alb_list else "(앨범 없음)"
+
+                report_matrix[row_cursor][1] = alb_str
+                # (중요) 여기서 "곡비" = prev_val + curr_val
+                report_matrix[row_cursor][2] = to_currency(song_cost_for_report)
+                # 공제금액
+                report_matrix[row_cursor][3] = to_currency(deduct_val)
+                # 공제 후 남은 곡비
+                report_matrix[row_cursor][5] = to_currency(remain_val)
+                # 공제 적용 금액 (매출 - 공제금액)
+                report_matrix[row_cursor][6] = to_currency(sum_2 - deduct_val)
+                row_cursor += 2
+                row_cursor_sum3 = row_cursor
+
+                # -----------------------------------------------------------------
+                # 4. 수익 배분
+                # -----------------------------------------------------------------
+                report_matrix[row_cursor][0] = "4."
+                report_matrix[row_cursor][1] = "수익 배분"
+                row_cursor += 1
+                row_cursor_rate = row_cursor
+                report_matrix[row_cursor][1] = "앨범"
+                report_matrix[row_cursor][2] = "항목"
+                report_matrix[row_cursor][3] = "적용율"
+                report_matrix[row_cursor][6] = "적용 금액"
+                row_cursor += 1
+
+                report_matrix[row_cursor][1] = alb_str
+                report_matrix[row_cursor][2] = "수익 배분율"
+                report_matrix[row_cursor][3] = f"{int(rate_val)}%"
+                report_matrix[row_cursor][6] = to_currency(final_amount)
+                row_cursor += 1
+
+                report_matrix[row_cursor][1] = "총 정산금액"
+                report_matrix[row_cursor][6] = to_currency(final_amount)
+                row_cursor_sum4 = row_cursor
+                row_cursor += 2
+
+                report_matrix[row_cursor][6] = "* 부가세 별도"
+                row_cursor_report_end = row_cursor + 2
+
+                # 시트에 실제 업로드
+                ws_report.update("A1", report_matrix)
+                time.sleep(1)
+
+                # ------------------------------------
+                # (검증) check_dict에 비교결과 반영
+                # ------------------------------------
+                # (1) 세부매출 vs 정산서
+                for d in details_sorted:
+                    original_val = d["revenue"]
+                    report_val   = d["revenue"]  # 현재는 동일
+                    is_match = almost_equal(original_val, report_val)
+                    if not is_match:
+                        check_dict["verification_summary"]["total_errors"] += 1
+                        check_dict["verification_summary"]["artist_error_list"].append(artist)
+
+                    row_report_item = {
+                        "아티스트": artist,
+                        "구분": "음원서비스별매출",
+                        "앨범": d["album"],
+                        "서비스명": d["service"],
+                        "원본_매출액": original_val,
+                        "정산서_매출액": report_val,
+                        "match_매출액": is_match,
+                    }
+                    check_dict["details_verification"]["세부매출"].append(row_report_item)
+
+                # (2) 공제 내역(곡비,공제금액,공제후잔액)
+                #   원본(= input_song cost) 값 vs 보고서 값
+                #   "곡비"는 (prev + curr), "공제금액"=deduct_val, "남은 곡비"=remain_val
+                #   *원본_곡비 = (전월잔액 + 당월발생)
+                original_song_cost = artist_cost_dict[artist]["전월잔액"] + artist_cost_dict[artist]["당월발생"]
+                is_match_songcost = almost_equal(original_song_cost, song_cost_for_report)
+                is_match_deduct   = almost_equal(artist_cost_dict[artist]["당월차감액"], deduct_val)
+                is_match_remain   = almost_equal(artist_cost_dict[artist]["당월잔액"], remain_val)
+
+                if not (is_match_songcost and is_match_deduct and is_match_remain):
+                    check_dict["verification_summary"]["total_errors"] += 1
+                    check_dict["verification_summary"]["artist_error_list"].append(artist)
+
+                row_report_item_3 = {
+                    "아티스트": artist,
+                    "구분": "공제내역",
+                    # 곡비
+                    "원본_곡비": original_song_cost,
+                    "정산서_곡비": song_cost_for_report,
+                    "match_곡비": is_match_songcost,
+                    # 공제금액
+                    "원본_공제금액": artist_cost_dict[artist]["당월차감액"],
+                    "정산서_공제금액": deduct_val,
+                    "match_공제금액": is_match_deduct,
+                    # 공제후잔액
+                    "원본_공제후잔액": artist_cost_dict[artist]["당월잔액"],
+                    "정산서_공제후잔액": remain_val,
+                    "match_공제후잔액": is_match_remain,
                 }
-            },
-        ])
+                check_dict["details_verification"]["정산서"].append(row_report_item_3)
 
-        # (C) 헤더(A1~G1) 포맷
-        detail_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": sheet_id_detail,
-                    "startRowIndex": 0,
-                    "endRowIndex": 1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red":1.0, "green":0.8, "blue":0.0},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "bold": True,
-                            "foregroundColor": {"red":0,"green":0,"blue":0}
+                # (3) 4번 수익 배분율
+                original_rate = artist_cost_dict[artist]["정산요율"]
+                is_rate_match = almost_equal(original_rate, rate_val)
+                if not is_rate_match:
+                    check_dict["verification_summary"]["total_errors"] += 1
+                    check_dict["verification_summary"]["artist_error_list"].append(artist)
+
+                row_report_item_4 = {
+                    "아티스트": artist,
+                    "구분": "수익배분율",
+                    "원본_정산율(%)": original_rate,
+                    "정산서_정산율(%)": rate_val,
+                    "match_정산율": is_rate_match,
+                }
+                check_dict["details_verification"]["정산서"].append(row_report_item_4)
+
+                time.sleep(1)   
+
+                # --------------------------------------------------
+                # 정산서 탭(디자인/서식) batchUpdate
+                # --------------------------------------------------
+                report_requests = []
+
+                # (A) 시트 row/col 크기
+                report_requests.append({
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": ws_report_id,
+                            "gridProperties": {
+                                "rowCount": row_cursor_report_end,
+                                "columnCount": 8
+                            }
+                        },
+                        "fields": "gridProperties(rowCount,columnCount)"
+                    }
+                })
+
+                # (B) 열너비 (A=0 ~ H=7)
+                report_requests.extend([
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 0,
+                                "endIndex": 1
+                            },
+                            "properties": {"pixelSize": 40},
+                            "fields": "pixelSize"
                         }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-
-        # (D) 합계행 병합 + 서식
-        sum_row_0based = row_cursor_detail_end - 1
-        detail_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": sheet_id_detail,
-                    "startRowIndex": sum_row_0based,
-                    "endRowIndex": sum_row_0based+1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 6
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        detail_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": sheet_id_detail,
-                    "startRowIndex": sum_row_0based,
-                    "endRowIndex": sum_row_0based+1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 6
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red":1.0,"green":0.8,"blue":0.0},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {"bold": True}
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # 합계값(G열)에 오른쪽 정렬
-        detail_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": sheet_id_detail,
-                    "startRowIndex": sum_row_0based,
-                    "endRowIndex": sum_row_0based+1,
-                    "startColumnIndex": 6,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "RIGHT",
-                        "textFormat": {"bold": True}
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
-            }
-        })
-        # 매출 순수익 칼럼 (F열=idx=6) 나머지 행들
-        detail_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": sheet_id_detail,
-                    "startRowIndex": 1,
-                    "endRowIndex": sum_row_0based,
-                    "startColumnIndex": 6,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "RIGHT"
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment)"
-            }
-        })
-
-        # (E) 전체 테두리
-        detail_requests.append({
-            "updateBorders": {
-                "range": {
-                    "sheetId": sheet_id_detail,
-                    "startRowIndex": 0,
-                    "endRowIndex": row_cursor_detail_end,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 7
-                },
-                "top":    {"style":"SOLID","width":1},
-                "bottom": {"style":"SOLID","width":1},
-                "left":   {"style":"SOLID","width":1},
-                "right":  {"style":"SOLID","width":1},
-                "innerHorizontal": {"style":"SOLID","width":1},
-                "innerVertical":   {"style":"SOLID","width":1}
-            }
-        })
-
-        all_requests.extend(detail_requests)
-
-        # (호출 횟수 분할) 1회 batchUpdate 요청이 너무 커지면 나눠서 전송
-        if len(all_requests) >= 200:
-            sheet_svc.spreadsheets().batchUpdate(
-                spreadsheetId=out_file_id,
-                body={"requests": all_requests}
-            ).execute()
-            all_requests.clear()
-            time.sleep(1)
-
-
-        # ------------------------------------------------------
-        # 정산서 탭 (batchUpdate 방식)
-        # ------------------------------------------------------
-        ws_report = out_sh.worksheet(f"{artist}(정산서)")
-        ws_report_id = ws_report.id
-
-        # 매출 합
-        sum_1 = sum(d["revenue"] for d in details_sorted)  # "음원서비스별" 총합
-        # 앨범별 합
-        album_sum = defaultdict(float)
-        for d in details_sorted:
-            album_sum[d["album"]] += d["revenue"]
-        sum_2 = sum(album_sum.values())
-
-        # (A) "곡비" = "전월 잔액 + 당월 발생액" (요청 사항)
-        prev_val = artist_cost_dict[artist]["전월잔액"]
-        curr_val = artist_cost_dict[artist]["당월발생"]
-        # 보고서 '3. 공제 내역'의 '곡비' 칼럼 값 = prev_val + curr_val
-        song_cost_for_report = prev_val + curr_val
-
-        # (B) 공제 금액 & 잔액
-        deduct_val = artist_cost_dict[artist]["당월차감액"]  # 이미 input_song cost에서 계산된 값
-        remain_val = artist_cost_dict[artist]["당월잔액"]   # 동일
-        # "공제 적용 후" 매출 = (음원 매출 합) - 공제금액 => sum_2 - deduct_val
-        # (단, 요청 사항/업무로직에 따라 정확히 어떻게 적용할지는 케이스별로 맞춤)
-
-        # (C) 정산율 / 최종 정산금액
-        rate_val = artist_cost_dict[artist]["정산요율"]
-        공제적용후 = sum_2 - deduct_val
-        final_amount = 공제적용후 * (rate_val / 100.0)
-        
-
-        # --------------------------------------
-        # 정산서 테이블(직접 row col 배열 채우기)
-        # --------------------------------------
-        report_matrix = []
-        for _ in range(300):
-            report_matrix.append([""] * 8)
-
-        # 1) 상단 공통정보
-        report_matrix[1][6] = report_date   # 보고서 발행일
-        report_matrix[3][1] = f"{year_val}년 {month_val}월 판매분"
-        report_matrix[5][1] = f"{artist}님 음원 정산 내역서"
-
-        report_matrix[7][0] = "•"
-        report_matrix[7][1] = "저희와 함께해 주셔서 정말 감사하고 앞으로도 잘 부탁드리겠습니다!"
-        report_matrix[8][0] = "•"
-        report_matrix[8][1] = f"{year_val}년 {month_val}월 음원의 수익을 아래와 같이 정산드리오니 참고 부탁드립니다."
-        report_matrix[9][0] = "•"
-        report_matrix[9][1] = "정산 관련하여 문의사항이 있다면 무엇이든, 언제든 편히 메일 주세요!"
-        report_matrix[9][5] = "E-Mail : lucasdh3013@naver.com"
-
-        # -----------------------------------------------------------------
-        # 1. 음원 서비스별 정산내역 (세부매출 그대로)
-        # -----------------------------------------------------------------
-        report_matrix[12][0] = "1."
-        report_matrix[12][1] = "음원 서비스별 정산내역"
-
-        header_row_1 = 13
-        headers_1 = ["앨범", "대분류", "중분류", "서비스명", "기간", "매출액"]
-        for i_h, val_h in enumerate(headers_1):
-            report_matrix[header_row_1][1 + i_h] = val_h
-
-        row_cursor = header_row_1 + 1
-        for d in details_sorted:
-            rv = d["revenue"]
-            report_matrix[row_cursor][1] = d["album"]
-            report_matrix[row_cursor][2] = d["major"]
-            report_matrix[row_cursor][3] = d["middle"]
-            report_matrix[row_cursor][4] = d["service"]
-            report_matrix[row_cursor][5] = f"{year_val}년 {month_val}월"
-            report_matrix[row_cursor][6] = to_currency(rv)
-            row_cursor += 1
-
-        row_cursor += 2
-        # 합계
-        report_matrix[row_cursor-1][1] = "합계"
-        report_matrix[row_cursor-1][6] = to_currency(sum_1)
-        row_cursor_sum1 = row_cursor
-        row_cursor += 1
-
-        # -----------------------------------------------------------------
-        # 2. 앨범 별 정산 내역
-        # -----------------------------------------------------------------
-        report_matrix[row_cursor][0] = "2."
-        report_matrix[row_cursor][1] = "앨범 별 정산 내역"
-        row_cursor += 1
-        row_cursor_album = row_cursor
-        report_matrix[row_cursor][1] = "앨범"
-        report_matrix[row_cursor][5] = "기간"
-        report_matrix[row_cursor][6] = "매출액"
-        row_cursor += 1
-
-        for alb in sorted(album_sum.keys(), key=album_sort_key):
-            amt = album_sum[alb]
-            report_matrix[row_cursor][1] = alb
-            report_matrix[row_cursor][5] = f"{year_val}년 {month_val}월"
-            report_matrix[row_cursor][6] = to_currency(amt)
-            row_cursor += 1
-
-        row_cursor += 1
-        report_matrix[row_cursor-1][1] = "합계"
-        report_matrix[row_cursor-1][6] = to_currency(sum_2)
-        row_cursor_sum2 = row_cursor
-        row_cursor += 1
-
-        # -----------------------------------------------------------------
-        # 3. 공제 내역
-        #    (요청사항: '곡비' 칼럼 = (전월 잔액 + 당월 발생액))
-        # -----------------------------------------------------------------
-        report_matrix[row_cursor][0] = "3."
-        report_matrix[row_cursor][1] = "공제 내역"
-        row_cursor += 1
-        row_cursor_deduction = row_cursor
-
-        report_matrix[row_cursor][1] = "앨범"
-        report_matrix[row_cursor][2] = "곡비"
-        report_matrix[row_cursor][3] = "공제 금액"
-        report_matrix[row_cursor][5] = "공제 후 남은 곡비"
-        report_matrix[row_cursor][6] = "공제 적용 금액"
-        row_cursor += 1
-
-        # 앨범(들)을 표기만 할지, 혹은 여러줄로 표현할지 등은 업무 규칙에 따라
-        alb_list = sorted(album_sum.keys(), key=album_sort_key)
-        alb_str = ", ".join(alb_list) if alb_list else "(앨범 없음)"
-
-        report_matrix[row_cursor][1] = alb_str
-        # (중요) 여기서 "곡비" = prev_val + curr_val
-        report_matrix[row_cursor][2] = to_currency(song_cost_for_report)
-        # 공제금액
-        report_matrix[row_cursor][3] = to_currency(deduct_val)
-        # 공제 후 남은 곡비
-        report_matrix[row_cursor][5] = to_currency(remain_val)
-        # 공제 적용 금액 (매출 - 공제금액)
-        report_matrix[row_cursor][6] = to_currency(sum_2 - deduct_val)
-        row_cursor += 2
-        row_cursor_sum3 = row_cursor
-
-        # -----------------------------------------------------------------
-        # 4. 수익 배분
-        # -----------------------------------------------------------------
-        report_matrix[row_cursor][0] = "4."
-        report_matrix[row_cursor][1] = "수익 배분"
-        row_cursor += 1
-        row_cursor_rate = row_cursor
-        report_matrix[row_cursor][1] = "앨범"
-        report_matrix[row_cursor][2] = "항목"
-        report_matrix[row_cursor][3] = "적용율"
-        report_matrix[row_cursor][6] = "적용 금액"
-        row_cursor += 1
-
-        report_matrix[row_cursor][1] = alb_str
-        report_matrix[row_cursor][2] = "수익 배분율"
-        report_matrix[row_cursor][3] = f"{int(rate_val)}%"
-        report_matrix[row_cursor][6] = to_currency(final_amount)
-        row_cursor += 1
-
-        report_matrix[row_cursor][1] = "총 정산금액"
-        report_matrix[row_cursor][6] = to_currency(final_amount)
-        row_cursor_sum4 = row_cursor
-        row_cursor += 2
-
-        report_matrix[row_cursor][6] = "* 부가세 별도"
-        row_cursor_report_end = row_cursor + 2
-
-        # 시트에 실제 업로드
-        ws_report.update("A1", report_matrix)
-        time.sleep(1)
-
-        # ------------------------------------
-        # (검증) check_dict에 비교결과 반영
-        # ------------------------------------
-        # (1) 세부매출 vs 정산서
-        for d in details_sorted:
-            original_val = d["revenue"]
-            report_val   = d["revenue"]  # 현재는 동일
-            is_match = almost_equal(original_val, report_val)
-            if not is_match:
-                check_dict["verification_summary"]["total_errors"] += 1
-                check_dict["verification_summary"]["artist_error_list"].append(artist)
-
-            row_report_item = {
-                "아티스트": artist,
-                "구분": "음원서비스별매출",
-                "앨범": d["album"],
-                "서비스명": d["service"],
-                "원본_매출액": original_val,
-                "정산서_매출액": report_val,
-                "match_매출액": is_match,
-            }
-            check_dict["details_verification"]["세부매출"].append(row_report_item)
-
-        # (2) 공제 내역(곡비,공제금액,공제후잔액)
-        #   원본(= input_song cost) 값 vs 보고서 값
-        #   "곡비"는 (prev + curr), "공제금액"=deduct_val, "남은 곡비"=remain_val
-        #   *원본_곡비 = (전월잔액 + 당월발생)
-        original_song_cost = artist_cost_dict[artist]["전월잔액"] + artist_cost_dict[artist]["당월발생"]
-        is_match_songcost = almost_equal(original_song_cost, song_cost_for_report)
-        is_match_deduct   = almost_equal(artist_cost_dict[artist]["당월차감액"], deduct_val)
-        is_match_remain   = almost_equal(artist_cost_dict[artist]["당월잔액"], remain_val)
-
-        if not (is_match_songcost and is_match_deduct and is_match_remain):
-            check_dict["verification_summary"]["total_errors"] += 1
-            check_dict["verification_summary"]["artist_error_list"].append(artist)
-
-        row_report_item_3 = {
-            "아티스트": artist,
-            "구분": "공제내역",
-            # 곡비
-            "원본_곡비": original_song_cost,
-            "정산서_곡비": song_cost_for_report,
-            "match_곡비": is_match_songcost,
-            # 공제금액
-            "원본_공제금액": artist_cost_dict[artist]["당월차감액"],
-            "정산서_공제금액": deduct_val,
-            "match_공제금액": is_match_deduct,
-            # 공제후잔액
-            "원본_공제후잔액": artist_cost_dict[artist]["당월잔액"],
-            "정산서_공제후잔액": remain_val,
-            "match_공제후잔액": is_match_remain,
-        }
-        check_dict["details_verification"]["정산서"].append(row_report_item_3)
-
-        # (3) 4번 수익 배분율
-        original_rate = artist_cost_dict[artist]["정산요율"]
-        is_rate_match = almost_equal(original_rate, rate_val)
-        if not is_rate_match:
-            check_dict["verification_summary"]["total_errors"] += 1
-            check_dict["verification_summary"]["artist_error_list"].append(artist)
-
-        row_report_item_4 = {
-            "아티스트": artist,
-            "구분": "수익배분율",
-            "원본_정산율(%)": original_rate,
-            "정산서_정산율(%)": rate_val,
-            "match_정산율": is_rate_match,
-        }
-        check_dict["details_verification"]["정산서"].append(row_report_item_4)
-
-        time.sleep(1)   
-
-        # --------------------------------------------------
-        # 정산서 탭(디자인/서식) batchUpdate
-        # --------------------------------------------------
-        report_requests = []
-
-        # (A) 시트 row/col 크기
-        report_requests.append({
-            "updateSheetProperties": {
-                "properties": {
-                    "sheetId": ws_report_id,
-                    "gridProperties": {
-                        "rowCount": row_cursor_report_end,
-                        "columnCount": 8
-                    }
-                },
-                "fields": "gridProperties(rowCount,columnCount)"
-            }
-        })
-
-        # (B) 열너비 (A=0 ~ H=7)
-        report_requests.extend([
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 0,
-                        "endIndex": 1
                     },
-                    "properties": {"pixelSize": 40},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 1,
-                        "endIndex": 2
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 1,
+                                "endIndex": 2
+                            },
+                            "properties": {"pixelSize": 200},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 200},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 2,
-                        "endIndex": 3
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 2,
+                                "endIndex": 3
+                            },
+                            "properties": {"pixelSize": 130},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 130},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 3,
-                        "endIndex": 4
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 3,
+                                "endIndex": 4
+                            },
+                            "properties": {"pixelSize": 120},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 120},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 4,
-                        "endIndex": 5
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 4,
+                                "endIndex": 5
+                            },
+                            "properties": {"pixelSize": 130},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 130},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 5,
-                        "endIndex": 6
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 5,
+                                "endIndex": 6
+                            },
+                            "properties": {"pixelSize": 130},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 130},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 6,
-                        "endIndex": 7
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 6,
+                                "endIndex": 7
+                            },
+                            "properties": {"pixelSize": 130},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 130},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "COLUMNS",
-                        "startIndex": 7,
-                        "endIndex": 8
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 7,
+                                "endIndex": 8
+                            },
+                            "properties": {"pixelSize": 40},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 40},
-                    "fields": "pixelSize"
-                }
-            },
-        ])
+                ])
 
-        # (C) 특정행 높이
-        report_requests.extend([
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "ROWS",
-                        "startIndex": 3,
-                        "endIndex": 4
+                # (C) 특정행 높이
+                report_requests.extend([
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "ROWS",
+                                "startIndex": 3,
+                                "endIndex": 4
+                            },
+                            "properties": {"pixelSize": 30},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 30},
-                    "fields": "pixelSize"
-                }
-            },
-            {
-                "updateDimensionProperties": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "dimension": "ROWS",
-                        "startIndex": 5,
-                        "endIndex": 6
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "dimension": "ROWS",
+                                "startIndex": 5,
+                                "endIndex": 6
+                            },
+                            "properties": {"pixelSize": 30},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "properties": {"pixelSize": 30},
-                    "fields": "pixelSize"
-                }
-            },
-        ])
+                ])
 
-        # (D) 상단 고정 항목(발행 날짜, H2: row=1, col=6)
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 1,
-                    "endRowIndex": 2,
-                    "startColumnIndex": 6,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "RIGHT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": False
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })        
-
-        # (E) 상단 고정 항목(판매분, B4:E4)
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 3,  # (4-1)
-                    "endRowIndex": 4,
-                    "startColumnIndex": 1,  # (B=1)
-                    "endColumnIndex": 5     # (E=4 => endIndex=5)
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 3,
-                    "endRowIndex": 4,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 5
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "LEFT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 15,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-
-        # (F) 상단 고정 항목(아티스트 정산내역서, B6:G6)
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 5,
-                    "endRowIndex": 6,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 5,
-                    "endRowIndex": 6,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 15,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-
-        # (G) 상단 고정 항목(안내문, B8:E8~B10:E10)
-        #8행
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 7,  # (4-1)
-                    "endRowIndex": 8,
-                    "startColumnIndex": 1,  # (B=1)
-                    "endColumnIndex": 5     # (E=4 => endIndex=5)
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 7,  # (4-1)
-                    "endRowIndex": 8,
-                    "startColumnIndex": 1,  # (B=1)
-                    "endColumnIndex": 5     # (E=4 => endIndex=5)
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "LEFT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "bold": False
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        #9행
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 8,  
-                    "endRowIndex": 9,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 5 
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 8,  
-                    "endRowIndex": 9,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 5 
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "LEFT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                          "bold": False
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        #10행
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 9,  
-                    "endRowIndex": 10,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 5 
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 9,  
-                    "endRowIndex": 10,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 5 
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "LEFT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "bold": False
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # 10행 (E-Mail 칸)
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 9,  
-                    "endRowIndex": 10,
-                    "startColumnIndex": 5,
-                    "endColumnIndex": 7 
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 9,
-                    "endRowIndex": 10,
-                    "startColumnIndex": 5,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "RIGHT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "foregroundColor": {"red": 0.29, "green": 0.53, "blue": 0.91},
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        
-        # (H) 1열 정렬 (번호 영역)
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 1,
-                    "endRowIndex": row_cursor_rate+1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 1
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": False
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-
-        # (I) 하단 고정 항목(부가세, G)
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_report_end-2,
-                    "endRowIndex": row_cursor_report_end,
-                    "startColumnIndex": 6,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "RIGHT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": False
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        }) 
-    
-
-        # (J-1) "음원 서비스별 정산내역" 표 타이틀
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 12,  # (4-1)
-                    "endRowIndex": 13,
-                    "startColumnIndex": 1,  # (B=1)
-                    "endColumnIndex": 2     # (E=4 => endIndex=5)
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "LEFT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (J-2) "음원 서비스별 정산내역" 표 헤더 (Row=13)
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 13,
-                    "endRowIndex": 14,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (J-3) 합계행 전 병합
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum1-2,
-                    "endRowIndex": row_cursor_sum1-1,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        # (J-4) 합계행 병합
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum1-1,
-                    "endRowIndex": row_cursor_sum1,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 6
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum1-1,
-                    "endRowIndex": row_cursor_sum1,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 6
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum1-1,
-                    "endRowIndex": row_cursor_sum1,
-                    "startColumnIndex": 6,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (J-5) 표에 Banding (줄무늬 효과)
-        banding_start_row = 14
-        banding_end_row = row_cursor_sum1 - 2
-        banding_start_col = 1
-        banding_end_col = 7
-        if banding_end_row > banding_start_row:  # 유효범위 체크
-            report_requests.append({
-                "addBanding": {
-                    "bandedRange": {
+                # (D) 상단 고정 항목(발행 날짜, H2: row=1, col=6)
+                report_requests.append({
+                    "repeatCell": {
                         "range": {
                             "sheetId": ws_report_id,
-                            "startRowIndex": banding_start_row,
-                            "endRowIndex": banding_end_row,
-                            "startColumnIndex": banding_start_col,
-                            "endColumnIndex": banding_end_col
+                            "startRowIndex": 1,
+                            "endRowIndex": 2,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
                         },
-                        "rowProperties": {
-                            "firstBandColor": {
-                                "red": 1.0, "green": 1.0, "blue": 1.0
-                            },
-                            "secondBandColor": {
-                                "red": 0.896, "green": 0.988, "blue": 1
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
                             }
                         },
-                        
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
                     }
-                }
-            })
-            report_requests.append({
-                "repeatCell": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "startRowIndex": banding_start_row,
-                        "endRowIndex": banding_end_row,
-                        "startColumnIndex": banding_start_col,
-                        "endColumnIndex": banding_end_col
-                    },
-                    "cell": {
-                        "userEnteredFormat": {
-                            "horizontalAlignment": "CENTER",
-                            "verticalAlignment": "MIDDLE",
-                            "textFormat": {
-                                "fontFamily": "Malgun Gothic",
-                                "fontSize": 10,
+                })        
+
+                # (E) 상단 고정 항목(판매분, B4:E4)
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 3,  # (4-1)
+                            "endRowIndex": 4,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 5     # (E=4 => endIndex=5)
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 3,
+                            "endRowIndex": 4,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 15,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+                # (F) 상단 고정 항목(아티스트 정산내역서, B6:G6)
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 5,
+                            "endRowIndex": 6,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 5,
+                            "endRowIndex": 6,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 15,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+                # (G) 상단 고정 항목(안내문, B8:E8~B10:E10)
+                #8행
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 7,  # (4-1)
+                            "endRowIndex": 8,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 5     # (E=4 => endIndex=5)
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 7,  # (4-1)
+                            "endRowIndex": 8,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 5     # (E=4 => endIndex=5)
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                #9행
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 8,  
+                            "endRowIndex": 9,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5 
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 8,  
+                            "endRowIndex": 9,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5 
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
                                 "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                #10행
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 9,  
+                            "endRowIndex": 10,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5 
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 9,  
+                            "endRowIndex": 10,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5 
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # 10행 (E-Mail 칸)
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 9,  
+                            "endRowIndex": 10,
+                            "startColumnIndex": 5,
+                            "endColumnIndex": 7 
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 9,
+                            "endRowIndex": 10,
+                            "startColumnIndex": 5,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "foregroundColor": {"red": 0.29, "green": 0.53, "blue": 0.91},
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                
+                # (H) 1열 정렬 (번호 영역)
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 1,
+                            "endRowIndex": row_cursor_rate+1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 1
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+                # (I) 하단 고정 항목(부가세, G)
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_report_end-2,
+                            "endRowIndex": row_cursor_report_end,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                }) 
+            
+
+                # (J-1) "음원 서비스별 정산내역" 표 타이틀
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 12,  # (4-1)
+                            "endRowIndex": 13,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 2     # (E=4 => endIndex=5)
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (J-2) "음원 서비스별 정산내역" 표 헤더 (Row=13)
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 13,
+                            "endRowIndex": 14,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (J-3) 합계행 전 병합
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum1-2,
+                            "endRowIndex": row_cursor_sum1-1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                # (J-4) 합계행 병합
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum1-1,
+                            "endRowIndex": row_cursor_sum1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum1-1,
+                            "endRowIndex": row_cursor_sum1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum1-1,
+                            "endRowIndex": row_cursor_sum1,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (J-5) 표에 Banding (줄무늬 효과)
+                banding_start_row = 14
+                banding_end_row = row_cursor_sum1 - 2
+                banding_start_col = 1
+                banding_end_col = 7
+                if banding_end_row > banding_start_row:  # 유효범위 체크
+                    report_requests.append({
+                        "addBanding": {
+                            "bandedRange": {
+                                "range": {
+                                    "sheetId": ws_report_id,
+                                    "startRowIndex": banding_start_row,
+                                    "endRowIndex": banding_end_row,
+                                    "startColumnIndex": banding_start_col,
+                                    "endColumnIndex": banding_end_col
+                                },
+                                "rowProperties": {
+                                    "firstBandColor": {
+                                        "red": 1.0, "green": 1.0, "blue": 1.0
+                                    },
+                                    "secondBandColor": {
+                                        "red": 0.896, "green": 0.988, "blue": 1
+                                    }
+                                },
+                                
                             }
                         }
+                    })
+                    report_requests.append({
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "startRowIndex": banding_start_row,
+                                "endRowIndex": banding_end_row,
+                                "startColumnIndex": banding_start_col,
+                                "endColumnIndex": banding_end_col
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "horizontalAlignment": "CENTER",
+                                    "verticalAlignment": "MIDDLE",
+                                    "textFormat": {
+                                        "fontFamily": "Malgun Gothic",
+                                        "fontSize": 10,
+                                        "bold": False
+                                    }
+                                }
+                            },
+                            "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                        }
+                    })
+
+
+                # (K-1) 앨범별 정산내역 타이틀
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_album-1,
+                            "endRowIndex": row_cursor_album,
+                            "startColumnIndex": 1, 
+                            "endColumnIndex": 2    
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (K-2) 앨범별 정산내역 헤더
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_album,
+                            "endRowIndex": row_cursor_album+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (K-3) 앨범별 정산내역 표 본문
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_album+1,
+                            "endRowIndex": row_cursor_sum2-1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (K-4) 앨범별 정산내역 합계행
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum2-1,
+                            "endRowIndex": row_cursor_sum2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (K-5) 합계행 병합
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum2-1,
+                            "endRowIndex": row_cursor_sum2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum2-1,
+                            "endRowIndex": row_cursor_sum2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum2-1,
+                            "endRowIndex": row_cursor_sum2,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+
+                # (L-1) 공제 내역 타이틀
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_deduction-1,  # (4-1)
+                            "endRowIndex": row_cursor_deduction,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 2     # (E=4 => endIndex=5)
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (L-2) 공제 내역 헤더
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_deduction,
+                            "endRowIndex": row_cursor_deduction+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (L-3) 공제 내역 표 본문 (데이터부분)
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_deduction+1,
+                            "endRowIndex": row_cursor_deduction+2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (L-4) 공제 내역 표 본문 (합계 부분)
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_deduction+1,
+                            "endRowIndex": row_cursor_deduction+2,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+
+                # (M-1) 수익 배분 타이틀
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_rate-1,
+                            "endRowIndex": row_cursor_rate,
+                            "startColumnIndex": 1,  
+                            "endColumnIndex": 2    
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (M-2) 수익 배분 헤더
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_rate,
+                            "endRowIndex": row_cursor_rate+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (M-3) 수익 배분 표 본문 
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_rate+1,
+                            "endRowIndex": row_cursor_rate+2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (M-4) 수익 배분 표 합계행 병합
+                report_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum4,
+                            "endRowIndex": row_cursor_sum4+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum4,
+                            "endRowIndex": row_cursor_sum4+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                report_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": row_cursor_sum4,
+                            "endRowIndex": row_cursor_sum4+1,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+
+                # (N) 전체 테두리 화이트
+                report_requests.append({
+                    "updateBorders": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 0,
+                            "endRowIndex": row_cursor_report_end,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 8
+                        },
+                        "top":    {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
+                        "bottom": {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
+                        "left":   {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
+                        "right":  {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
+                        "innerHorizontal": {"style":"SOLID","width":1,"color":{"red":1,"green":1,"blue":1}},
+                        "innerVertical":   {"style":"SOLID","width":1,"color":{"red":1,"green":1,"blue":1}}
+                    }
+                })
+                
+
+                # (O) 표 부분 점선 
+                def add_dotted_borders(r1, r2, c1, c2):
+                    """바깥+안쪽 모두 DOTTED"""
+                    report_requests.append({
+                        "updateBorders": {
+                            "range": {
+                                "sheetId": ws_report_id,
+                                "startRowIndex": r1,
+                                "endRowIndex": r2,
+                                "startColumnIndex": c1,
+                                "endColumnIndex": c2
+                            },
+                            "top":    {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "bottom": {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "left":   {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "right":  {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "innerHorizontal": {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "innerVertical":   {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}}
+                        }
+                    })
+                # 1번 섹션 A14:G30 => row=13..30, col=0..7
+                add_dotted_borders(13, row_cursor_sum1, 1, 7)
+                # 2번 섹션 
+                add_dotted_borders(row_cursor_album, row_cursor_sum2, 1, 7)
+                # 3번 섹션 
+                add_dotted_borders(row_cursor_deduction, row_cursor_sum3-1, 1, 7)
+                # 4번 섹션 
+                add_dotted_borders(row_cursor_rate, row_cursor_sum4+1, 1, 7)
+                
+
+                # (P) 시트 외곽 검정 SOLID 
+                report_requests.append({
+                    "updateBorders": {
+                        "range": {
+                            "sheetId": ws_report_id,
+                            "startRowIndex": 0,
+                            "endRowIndex": row_cursor_report_end,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 8
+                        },
+                        "top":    {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}},
+                        "bottom": {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}},
+                        "left":   {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}},
+                        "right":  {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}}
+                        # innerHorizontal, innerVertical는 생략 => 기존 값 유지
+                    }
+                })
+                
+                all_requests.extend(report_requests)
+
+
+                # batchUpdate 분할 전송
+                if len(all_requests) >= 200:
+                    sheet_svc.spreadsheets().batchUpdate(
+                        spreadsheetId=out_file_id,
+                        body={"requests": all_requests}
+                    ).execute()
+                    all_requests.clear()
+                    time.sleep(1)
+
+            #-------------------------------------------------------------------------
+            # FLUXUS 소속 처리
+            #-------------------------------------------------------------------------
+            elif one_sosok == "FLUXUS":
+                # 진행률
+                ratio = (i + 1) / len(all_artists)
+                progress_bar.progress(ratio)
+                artist_placeholder.info(f"[{i+1}/{len(all_artists)}] '{artist}' 처리 중...")
+
+                # ##########################
+                # (1) FLUXUS 세부매출내역 탭
+                # ##########################
+                ws_fluxus_detail = out_sh.worksheet(f"{one_sosok}_{artist}(세부매출내역)")
+                fluxus_yt_details = fluxus_yt_dict[artist]
+                fluxus_fs_details = fluxus_song_dict[artist]
+                fluxus_yt_details_sorted = sorted(fluxus_yt_details, key=lambda d: album_sort_key(d["album"]))
+                fluxus_fs_details_sorted = sorted(fluxus_fs_details, key=lambda d: album_sort_key(d["album"]))
+
+                fluxus_detail_matrix = []
+                fluxus_detail_matrix.append(["앨범아티스트","앨범명","트랙 No.","트랙명","트랙 ID","기간","매출 순수익"])
+
+                total_det = 0
+                for d in fluxus_yt_details_sorted:
+                    fy_rv_val = d["revenue"]
+                    total_det += fy_rv_val
+                    fluxus_detail_matrix.append([
+                        artist,
+                        d["album"],
+                        d["track_number"],
+                        d["track_title"],
+                        d["track_id"],
+                        f"{year_val}년 {month_val}월",
+                        to_currency(fy_rv_val)
+                    ])
+
+                # 합계
+                fluxus_detail_matrix.append(["합계","","","","","", to_currency(total_det)])
+                row_cursor_fluxus_detail_end = len(fluxus_detail_matrix)
+
+                # 시트 업데이트
+                ws_fluxus_detail.update("A1", fluxus_detail_matrix)
+                time.sleep(1)
+
+                # 세부매출내역 탭에 대한 서식/테두리 등 batch 요청
+                fluxus_detail_requests = []
+                sheet_id_fluxus_detail = ws_fluxus_detail.id
+
+                # (A) 시트 크기(row_cursor_detail_end, 7열)
+                fluxus_detail_requests.append({
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": sheet_id_fluxus_detail,
+                            "gridProperties": {
+                                "rowCount": row_cursor_fluxus_detail_end,
+                                "columnCount": 7
+                            }
+                        },
+                        "fields": "gridProperties(rowCount,columnCount)"
+                    }
+                })
+
+                # (B) 열너비 설정 (A=0, B=1, ...)
+                # 예: A열(0) → 140, B열(1) → 140, E열(4) → 120
+                fluxus_detail_requests.extend([
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_fluxus_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 0, 
+                                "endIndex": 1
+                            },
+                            "properties": {"pixelSize": 140},
+                            "fields": "pixelSize"
+                        }
                     },
-                    "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-                }
-            })
-
-
-        # (K-1) 앨범별 정산내역 타이틀
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_album-1,
-                    "endRowIndex": row_cursor_album,
-                    "startColumnIndex": 1, 
-                    "endColumnIndex": 2    
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "LEFT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "bold": True
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_fluxus_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 1,
+                                "endIndex": 2
+                            },
+                            "properties": {"pixelSize": 160},
+                            "fields": "pixelSize"
                         }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (K-2) 앨범별 정산내역 헤더
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_album,
-                    "endRowIndex": row_cursor_album+1,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (K-3) 앨범별 정산내역 표 본문
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_album+1,
-                    "endRowIndex": row_cursor_sum2-1,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": False
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (K-4) 앨범별 정산내역 합계행
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum2-1,
-                    "endRowIndex": row_cursor_sum2,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (K-5) 합계행 병합
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum2-1,
-                    "endRowIndex": row_cursor_sum2,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 6
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum2-1,
-                    "endRowIndex": row_cursor_sum2,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 6
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum2-1,
-                    "endRowIndex": row_cursor_sum2,
-                    "startColumnIndex": 6,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-
-
-        # (L-1) 공제 내역 타이틀
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_deduction-1,  # (4-1)
-                    "endRowIndex": row_cursor_deduction,
-                    "startColumnIndex": 1,  # (B=1)
-                    "endColumnIndex": 2     # (E=4 => endIndex=5)
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "LEFT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (L-2) 공제 내역 헤더
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_deduction,
-                    "endRowIndex": row_cursor_deduction+1,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (L-3) 공제 내역 표 본문 (데이터부분)
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_deduction+1,
-                    "endRowIndex": row_cursor_deduction+2,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 6
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": False
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (L-4) 공제 내역 표 본문 (합계 부분)
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_deduction+1,
-                    "endRowIndex": row_cursor_deduction+2,
-                    "startColumnIndex": 6,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-
-
-        # (M-1) 수익 배분 타이틀
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_rate-1,
-                    "endRowIndex": row_cursor_rate,
-                    "startColumnIndex": 1,  
-                    "endColumnIndex": 2    
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "LEFT",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (M-2) 수익 배분 헤더
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_rate,
-                    "endRowIndex": row_cursor_rate+1,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (M-3) 수익 배분 표 본문 
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_rate+1,
-                    "endRowIndex": row_cursor_rate+2,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": False
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        # (M-4) 수익 배분 표 합계행 병합
-        report_requests.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum4,
-                    "endRowIndex": row_cursor_sum4+1,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 6
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum4,
-                    "endRowIndex": row_cursor_sum4+1,
-                    "startColumnIndex": 1,
-                    "endColumnIndex": 6
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-        report_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": row_cursor_sum4,
-                    "endRowIndex": row_cursor_sum4+1,
-                    "startColumnIndex": 6,
-                    "endColumnIndex": 7
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
-                        "horizontalAlignment": "CENTER",
-                        "verticalAlignment": "MIDDLE",
-                        "textFormat": {
-                            "fontFamily": "Malgun Gothic",
-                            "fontSize": 10,
-                            "bold": True
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
-            }
-        })
-
-
-        # (N) 전체 테두리 화이트
-        report_requests.append({
-            "updateBorders": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 0,
-                    "endRowIndex": row_cursor_report_end,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 8
-                },
-                "top":    {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
-                "bottom": {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
-                "left":   {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
-                "right":  {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
-                "innerHorizontal": {"style":"SOLID","width":1,"color":{"red":1,"green":1,"blue":1}},
-                "innerVertical":   {"style":"SOLID","width":1,"color":{"red":1,"green":1,"blue":1}}
-            }
-        })
-        
-
-        # (O) 표 부분 점선 
-        def add_dotted_borders(r1, r2, c1, c2):
-            """바깥+안쪽 모두 DOTTED"""
-            report_requests.append({
-                "updateBorders": {
-                    "range": {
-                        "sheetId": ws_report_id,
-                        "startRowIndex": r1,
-                        "endRowIndex": r2,
-                        "startColumnIndex": c1,
-                        "endColumnIndex": c2
                     },
-                    "top":    {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
-                    "bottom": {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
-                    "left":   {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
-                    "right":  {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
-                    "innerHorizontal": {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
-                    "innerVertical":   {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}}
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_fluxus_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 4,
+                                "endIndex": 5
+                            },
+                            "properties": {"pixelSize": 100},
+                            "fields": "pixelSize"
+                        }
+                    },
+                                        {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_fluxus_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 5,
+                                "endIndex": 6
+                            },
+                            "properties": {"pixelSize": 160},
+                            "fields": "pixelSize"
+                        }
+                    },
+                                        {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_fluxus_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 6,
+                                "endIndex": 7
+                            },
+                            "properties": {"pixelSize": 100},
+                            "fields": "pixelSize"
+                        }
+                    },
+                                        {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_fluxus_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 7,
+                                "endIndex": 8
+                            },
+                            "properties": {"pixelSize": 120},
+                            "fields": "pixelSize"
+                        }
+                    },
+                                        {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": sheet_id_fluxus_detail,
+                                "dimension": "COLUMNS",
+                                "startIndex": 8,
+                                "endIndex": 9
+                            },
+                            "properties": {"pixelSize": 140},
+                            "fields": "pixelSize"
+                        }
+                    }
+                ])
+
+                # (C) 헤더(A1~G1) 포맷
+                fluxus_detail_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id_fluxus_detail,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True,
+                                    "foregroundColor": {"red":0,"green":0,"blue":0}
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+                # (D) 합계행 병합 + 서식
+                sum_row_0based = row_cursor_fluxus_detail_end - 1
+                fluxus_detail_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheet_id_fluxus_detail,
+                            "startRowIndex": sum_row_0based,
+                            "endRowIndex": sum_row_0based+1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 6
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                fluxus_detail_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id_fluxus_detail,
+                            "startRowIndex": sum_row_0based,
+                            "endRowIndex": sum_row_0based+1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {"bold": True}
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # 합계값(G열)에 오른쪽 정렬
+                fluxus_detail_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id_fluxus_detail,
+                            "startRowIndex": sum_row_0based,
+                            "endRowIndex": sum_row_0based+1,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT",
+                                "textFormat": {"bold": True}
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,textFormat)"
+                    }
+                })
+                # 매출 순수익 칼럼 (F열=idx=6) 나머지 행들
+                fluxus_detail_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id_fluxus_detail,
+                            "startRowIndex": 1,
+                            "endRowIndex": sum_row_0based,
+                            "startColumnIndex": 6,
+                            "endColumnIndex": 7
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT"
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment)"
+                    }
+                })
+
+                # (E) 전체 테두리
+                fluxus_detail_requests.append({
+                    "updateBorders": {
+                        "range": {
+                            "sheetId": sheet_id_fluxus_detail,
+                            "startRowIndex": 0,
+                            "endRowIndex": row_cursor_fluxus_detail_end,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 7
+                        },
+                        "top":    {"style":"SOLID","width":1},
+                        "bottom": {"style":"SOLID","width":1},
+                        "left":   {"style":"SOLID","width":1},
+                        "right":  {"style":"SOLID","width":1},
+                        "innerHorizontal": {"style":"SOLID","width":1},
+                        "innerVertical":   {"style":"SOLID","width":1}
+                    }
+                })
+
+                all_requests.extend(fluxus_detail_requests)
+
+                # (호출 횟수 분할) 1회 batchUpdate 요청이 너무 커지면 나눠서 전송
+                if len(all_requests) >= 200:
+                    sheet_svc.spreadsheets().batchUpdate(
+                        spreadsheetId=out_file_id,
+                        body={"requests": all_requests}
+                    ).execute()
+                    all_requests.clear()
+                    time.sleep(1)
+            
+
+                # ################################
+                # FLUXUS 정산서 탭 (batchUpdate 방식)
+                # ################################
+                ws_fluxus_report = out_sh.worksheet(f"{one_sosok}_{artist}(정산서)")
+                ws_fluxus_report_id = ws_fluxus_report.id
+
+                # 매출 합
+                fluxus_sum_all = sum(d["revenue"] for d in fluxus_yt_details_sorted) + sum_fs_rv_val  # "음원서비스별" 총합
+                # 앨범별 합
+                fluxus_album_sum = defaultdict(float)
+                for d in fluxus_yt_details_sorted:
+                    fluxus_album_sum[d["album"]] += d["revenue"]
+                fluxus_sum_album = sum(fluxus_album_sum.values())
+
+                # (A) "곡비" = "전월 잔액 + 당월 발생액" (요청 사항)
+                prev_val = artist_cost_dict[artist]["전월잔액"]
+                curr_val = artist_cost_dict[artist]["당월발생"]
+                # 보고서 '3. 공제 내역'의 '곡비' 칼럼 값 = prev_val + curr_val
+                song_cost_for_report = prev_val + curr_val
+
+                # (B) 공제 금액 & 잔액
+                deduct_val = artist_cost_dict[artist]["당월차감액"]  # 이미 input_song cost에서 계산된 값
+                remain_val = artist_cost_dict[artist]["당월잔액"]   # 동일
+                # "공제 적용 후" 매출 = (음원 매출 합) - 공제금액 => sum_2 - deduct_val
+                # (단, 요청 사항/업무로직에 따라 정확히 어떻게 적용할지는 케이스별로 맞춤)
+
+                # (C) 정산율 / 최종 정산금액
+                rate_val = artist_cost_dict[artist]["정산요율"]
+                공제적용후 = sum_2 - deduct_val
+                final_amount = 공제적용후 * (rate_val / 100.0)
+                
+
+                # --------------------------------------
+                # 정산서 테이블(직접 row col 배열 채우기)
+                # --------------------------------------
+                report_fluxus_matrix = []
+                for _ in range(300):
+                    report_fluxus_matrix.append([""] * 7)
+
+                # 1) 상단 공통정보
+                report_fluxus_matrix[1][5] = report_date   # 보고서 발행일
+                report_fluxus_matrix[3][1] = f"{year_val}년 {month_val}월 판매분"
+                report_fluxus_matrix[5][1] = f"{artist}님 음원 정산 내역서"
+
+                report_fluxus_matrix[7][0] = "•"
+                report_fluxus_matrix[7][1] = "저희와 함께해 주셔서 정말 감사하고 앞으로도 잘 부탁드리겠습니다!"
+                report_fluxus_matrix[8][0] = "•"
+                report_fluxus_matrix[8][1] = f"{year_val}년 {month_val}월 음원의 수익을 아래와 같이 정산드리오니 참고 부탁드립니다."
+                report_fluxus_matrix[9][0] = "•"
+                report_fluxus_matrix[9][1] = "정산 관련하여 문의사항이 있다면 무엇이든, 언제든 편히 메일 주세요!"
+                report_fluxus_matrix[9][4] = "E-Mail : lucasdh3013@naver.com"
+
+                # -----------------------------------------------------------------
+                # 1. 음원 서비스별 정산내역 (세부매출 그대로)
+                # -----------------------------------------------------------------
+                report_fluxus_matrix[12][0] = "1."
+                report_fluxus_matrix[12][1] = "음원 서비스별 정산내역"
+
+                header_row_1 = 13
+                headers_1 = ["앨범", "내용", "", "기간", "매출액"]
+                for i_h, val_h in enumerate(headers_1):
+                    report_fluxus_matrix[header_row_1][1 + i_h] = val_h
+
+                row_cursor = header_row_1 + 1
+                for d in fluxus_yt_details_sorted:
+                    rv = d["revenue"]
+                    report_fluxus_matrix[row_cursor][1] = d["album"]
+                    report_fluxus_matrix[row_cursor][2] = d["track_title"]
+                    report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
+                    report_fluxus_matrix[row_cursor][5] = to_currency(rv)
+                    row_cursor += 1
+                    if len(fluxus_yt_details_sorted) == row_cursor:
+                        report_fluxus_matrix[row_cursor][1] = d["album"]
+                        report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({month_val-1}월)"
+                        report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
+                        report_fluxus_matrix[row_cursor][5] = to_currency(sum_fs_rv_val)
+                        fluxus_album_sum[d["album"]] += sum_fs_rv_val
+                        row_cursor += 1
+
+                row_cursor += 2
+                # 합계
+                report_fluxus_matrix[row_cursor-1][1] = "합계"
+                report_fluxus_matrix[row_cursor-1][5] = to_currency(fluxus_sum_all)
+                row_cursor_sum1 = row_cursor
+                row_cursor += 1
+
+                # -----------------------------------------------------------------
+                # 2. 앨범 별 정산 내역
+                # -----------------------------------------------------------------
+                report_fluxus_matrix[row_cursor][0] = "2."
+                report_fluxus_matrix[row_cursor][1] = "앨범 별 정산 내역"
+                row_cursor += 1
+                row_cursor_album = row_cursor
+                report_fluxus_matrix[row_cursor][1] = "앨범"
+                report_fluxus_matrix[row_cursor][4] = "기간"
+                report_fluxus_matrix[row_cursor][5] = "매출액"
+                row_cursor += 1
+
+                for alb in sorted(fluxus_album_sum.keys(), key=album_sort_key):
+                    amt = fluxus_album_sum[alb]
+                    report_fluxus_matrix[row_cursor][1] = alb
+                    report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
+                    report_fluxus_matrix[row_cursor][5] = to_currency(amt)
+                    row_cursor += 1
+
+                row_cursor += 1
+                report_fluxus_matrix[row_cursor-1][1] = "합계"
+                report_fluxus_matrix[row_cursor-1][5] = to_currency(fluxus_sum_album)
+                row_cursor_sum2 = row_cursor
+                row_cursor += 1
+
+                # -----------------------------------------------------------------
+                # 3. 공제 내역
+                #    (요청사항: '곡비' 칼럼 = (전월 잔액 + 당월 발생액))
+                # -----------------------------------------------------------------
+                report_fluxus_matrix[row_cursor][0] = "3."
+                report_fluxus_matrix[row_cursor][1] = "공제 내역"
+                row_cursor += 1
+                row_cursor_deduction = row_cursor
+
+                report_fluxus_matrix[row_cursor][1] = "앨범"
+                report_fluxus_matrix[row_cursor][2] = "곡비"
+                report_fluxus_matrix[row_cursor][3] = "공제 금액"
+                report_fluxus_matrix[row_cursor][4] = "공제 후 남은 곡비"
+                report_fluxus_matrix[row_cursor][5] = "공제 적용 금액"
+                row_cursor += 1
+
+                # 앨범(들)을 표기만 할지, 혹은 여러줄로 표현할지 등은 업무 규칙에 따라
+                alb_list = sorted(fluxus_album_sum.keys(), key=album_sort_key)
+                alb_str = ", ".join(alb_list) if alb_list else "(앨범 없음)"
+
+                report_fluxus_matrix[row_cursor][1] = alb_str
+                # (중요) 여기서 "곡비" = prev_val + curr_val
+                report_fluxus_matrix[row_cursor][2] = to_currency(song_cost_for_report)
+                # 공제금액
+                report_fluxus_matrix[row_cursor][3] = to_currency(deduct_val)
+                # 공제 후 남은 곡비
+                report_fluxus_matrix[row_cursor][4] = to_currency(remain_val)
+                # 공제 적용 금액 (매출 - 공제금액)
+                report_fluxus_matrix[row_cursor][5] = to_currency(fluxus_sum_all - deduct_val)
+                row_cursor += 2
+                row_cursor_sum3 = row_cursor
+
+                # -----------------------------------------------------------------
+                # 4. 수익 배분
+                # -----------------------------------------------------------------
+                report_fluxus_matrix[row_cursor][0] = "4."
+                report_fluxus_matrix[row_cursor][1] = "수익 배분"
+                row_cursor += 1
+                row_cursor_rate = row_cursor
+                report_fluxus_matrix[row_cursor][1] = "앨범"
+                report_fluxus_matrix[row_cursor][2] = "항목"
+                report_fluxus_matrix[row_cursor][3] = "적용율"
+                report_fluxus_matrix[row_cursor][5] = "적용 금액"
+                row_cursor += 1
+
+                report_fluxus_matrix[row_cursor][1] = alb_str
+                report_fluxus_matrix[row_cursor][2] = "수익 배분율"
+                report_fluxus_matrix[row_cursor][3] = f"{int(rate_val)}%"
+                report_fluxus_matrix[row_cursor][5] = to_currency(final_amount)
+                row_cursor += 1
+
+                report_fluxus_matrix[row_cursor][1] = "총 정산금액"
+                report_fluxus_matrix[row_cursor][5] = to_currency(final_amount)
+                row_cursor_sum4 = row_cursor
+                row_cursor += 2
+
+                report_fluxus_matrix[row_cursor][5] = "* 부가세 별도"
+                row_cursor_report_end = row_cursor + 2
+
+                # 시트에 실제 업로드
+                ws_fluxus_report.update("A1", report_fluxus_matrix)
+                time.sleep(1)
+
+                # ------------------------------------
+                # (검증) check_dict에 비교결과 반영
+                # ------------------------------------
+                # (1) 세부매출 vs 정산서
+                for d in fluxus_yt_details_sorted:
+                    original_val = d["revenue"]
+                    report_val   = d["revenue"]  # 현재는 동일
+                    is_match = almost_equal(original_val, report_val)
+                    if not is_match:
+                        check_dict["verification_summary"]["total_errors"] += 1
+                        check_dict["verification_summary"]["artist_error_list"].append(artist)
+
+                    row_report_item = {
+                        "아티스트": artist,
+                        "앨범": d["album"],
+                        "타이틀명": d["track_title"],
+                        "원본_매출액": original_val,
+                        "정산서_매출액": report_val,
+                        "match_매출액": is_match,
+                    }
+                    check_dict["details_verification"]["세부매출"].append(row_report_item)
+
+                # (2) 공제 내역(곡비,공제금액,공제후잔액)
+                #   원본(= input_song cost) 값 vs 보고서 값
+                #   "곡비"는 (prev + curr), "공제금액"=deduct_val, "남은 곡비"=remain_val
+                #   *원본_곡비 = (전월잔액 + 당월발생)
+                original_song_cost = artist_cost_dict[artist]["전월잔액"] + artist_cost_dict[artist]["당월발생"]
+                is_match_songcost = almost_equal(original_song_cost, song_cost_for_report)
+                is_match_deduct   = almost_equal(artist_cost_dict[artist]["당월차감액"], deduct_val)
+                is_match_remain   = almost_equal(artist_cost_dict[artist]["당월잔액"], remain_val)
+
+                if not (is_match_songcost and is_match_deduct and is_match_remain):
+                    check_dict["verification_summary"]["total_errors"] += 1
+                    check_dict["verification_summary"]["artist_error_list"].append(artist)
+
+                row_report_item_3 = {
+                    "아티스트": artist,
+                    "구분": "공제내역",
+                    # 곡비
+                    "원본_곡비": original_song_cost,
+                    "정산서_곡비": song_cost_for_report,
+                    "match_곡비": is_match_songcost,
+                    # 공제금액
+                    "원본_공제금액": artist_cost_dict[artist]["당월차감액"],
+                    "정산서_공제금액": deduct_val,
+                    "match_공제금액": is_match_deduct,
+                    # 공제후잔액
+                    "원본_공제후잔액": artist_cost_dict[artist]["당월잔액"],
+                    "정산서_공제후잔액": remain_val,
+                    "match_공제후잔액": is_match_remain,
                 }
-            })
-        # 1번 섹션 A14:G30 => row=13..30, col=0..7
-        add_dotted_borders(13, row_cursor_sum1, 1, 7)
-        # 2번 섹션 
-        add_dotted_borders(row_cursor_album, row_cursor_sum2, 1, 7)
-        # 3번 섹션 
-        add_dotted_borders(row_cursor_deduction, row_cursor_sum3-1, 1, 7)
-        # 4번 섹션 
-        add_dotted_borders(row_cursor_rate, row_cursor_sum4+1, 1, 7)
-        
+                check_dict["details_verification"]["정산서"].append(row_report_item_3)
 
-        # (P) 시트 외곽 검정 SOLID 
-        report_requests.append({
-            "updateBorders": {
-                "range": {
-                    "sheetId": ws_report_id,
-                    "startRowIndex": 0,
-                    "endRowIndex": row_cursor_report_end,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 8
-                },
-                "top":    {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}},
-                "bottom": {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}},
-                "left":   {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}},
-                "right":  {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}}
-                # innerHorizontal, innerVertical는 생략 => 기존 값 유지
-            }
-        })
-        
-        all_requests.extend(report_requests)
+                # (3) 4번 수익 배분율
+                original_rate = artist_cost_dict[artist]["정산요율"]
+                is_rate_match = almost_equal(original_rate, rate_val)
+                if not is_rate_match:
+                    check_dict["verification_summary"]["total_errors"] += 1
+                    check_dict["verification_summary"]["artist_error_list"].append(artist)
+
+                row_report_item_4 = {
+                    "아티스트": artist,
+                    "구분": "수익배분율",
+                    "원본_정산율(%)": original_rate,
+                    "정산서_정산율(%)": rate_val,
+                    "match_정산율": is_rate_match,
+                }
+                check_dict["details_verification"]["정산서"].append(row_report_item_4)
+
+                time.sleep(1)   
+
+                # --------------------------------------------------
+                # 정산서 탭(디자인/서식) batchUpdate
+                # --------------------------------------------------
+                report_fluxus_requests = []
+
+                # (A) 시트 row/col 크기
+                report_fluxus_requests.append({
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": ws_fluxus_report_id,
+                            "gridProperties": {
+                                "rowCount": row_cursor_report_end,
+                                "columnCount": 7
+                            }
+                        },
+                        "fields": "gridProperties(rowCount,columnCount)"
+                    }
+                })
+
+                # (B) 열너비 (A=0 ~ H=7)
+                report_fluxus_requests.extend([
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 0,
+                                "endIndex": 1
+                            },
+                            "properties": {"pixelSize": 40},
+                            "fields": "pixelSize"
+                        }
+                    },
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 1,
+                                "endIndex": 2
+                            },
+                            "properties": {"pixelSize": 180},
+                            "fields": "pixelSize"
+                        }
+                    },
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 2,
+                                "endIndex": 3
+                            },
+                            "properties": {"pixelSize": 160},
+                            "fields": "pixelSize"
+                        }
+                    },
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 3,
+                                "endIndex": 4
+                            },
+                            "properties": {"pixelSize": 140},
+                            "fields": "pixelSize"
+                        }
+                    },
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 4,
+                                "endIndex": 5
+                            },
+                            "properties": {"pixelSize": 150},
+                            "fields": "pixelSize"
+                        }
+                    },
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 5,
+                                "endIndex": 6
+                            },
+                            "properties": {"pixelSize": 160},
+                            "fields": "pixelSize"
+                        }
+                    },
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "dimension": "COLUMNS",
+                                "startIndex": 6,
+                                "endIndex": 7
+                            },
+                            "properties": {"pixelSize": 40},
+                            "fields": "pixelSize"
+                        }
+                    },
+                ])
+
+                # (C) 특정행 높이
+                report_fluxus_requests.extend([
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "dimension": "ROWS",
+                                "startIndex": 3,
+                                "endIndex": 4
+                            },
+                            "properties": {"pixelSize": 30},
+                            "fields": "pixelSize"
+                        }
+                    },
+                    {
+                        "updateDimensionProperties": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "dimension": "ROWS",
+                                "startIndex": 5,
+                                "endIndex": 6
+                            },
+                            "properties": {"pixelSize": 30},
+                            "fields": "pixelSize"
+                        }
+                    },
+                ])
+
+                # (D) 상단 고정 항목(발행 날짜, H2: row=1, col=6)
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 1,
+                            "endRowIndex": 2,
+                            "startColumnIndex": 5,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })        
+
+                # (E) 상단 고정 항목(판매분, B4:E4)
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 3,  # (4-1)
+                            "endRowIndex": 4,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 4     # (E=4 => endIndex=5)
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 3,
+                            "endRowIndex": 4,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 4
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 15,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+                # (F) 상단 고정 항목(아티스트 정산내역서, B6:G6)
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 5,
+                            "endRowIndex": 6,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 5,
+                            "endRowIndex": 6,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 15,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+                # (G) 상단 고정 항목(안내문, B8:E8~B10:E10)
+                #8행
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 7,  # (4-1)
+                            "endRowIndex": 8,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 4     # (E=4 => endIndex=5)
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 7,  # (4-1)
+                            "endRowIndex": 8,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 4     # (E=4 => endIndex=5)
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                #9행
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 8,  
+                            "endRowIndex": 9,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 4 
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 8,  
+                            "endRowIndex": 9,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 4 
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                #10행
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 9,  
+                            "endRowIndex": 10,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 4 
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 9,  
+                            "endRowIndex": 10,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 4 
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # 10행 (E-Mail 칸)
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 9,  
+                            "endRowIndex": 10,
+                            "startColumnIndex": 4,
+                            "endColumnIndex": 6 
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 9,
+                            "endRowIndex": 10,
+                            "startColumnIndex": 4,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "foregroundColor": {"red": 0.29, "green": 0.53, "blue": 0.91},
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                
+                # (H) 1열 정렬 (번호 영역)
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 1,
+                            "endRowIndex": row_cursor_rate+1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 1
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+                # (I) 하단 고정 항목(부가세, G)
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_report_end-2,
+                            "endRowIndex": row_cursor_report_end,
+                            "startColumnIndex": 5,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "RIGHT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                }) 
+            
+
+                # (J-1) "음원 서비스별 정산내역" 표 타이틀
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 12,  # (4-1)
+                            "endRowIndex": 13,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 2     # (E=4 => endIndex=5)
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (J-2) "음원 서비스별 정산내역" 표 헤더 (Row=13)
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 13,
+                            "endRowIndex": 14,
+                            "startColumnIndex": 2,
+                            "endColumnIndex": 4
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 13,
+                            "endRowIndex": 14,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (J-3) 합계행 전 병합
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum1-2,
+                            "endRowIndex": row_cursor_sum1-1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                # (J-4) 합계행 병합
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum1-1,
+                            "endRowIndex": row_cursor_sum1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum1-1,
+                            "endRowIndex": row_cursor_sum1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum1-1,
+                            "endRowIndex": row_cursor_sum1,
+                            "startColumnIndex": 5,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (J-5) 표에 Banding (줄무늬 효과)
+                banding_start_row = 14
+                banding_end_row = row_cursor_sum1 - 2
+                banding_start_col = 1
+                banding_end_col = 6
+                if banding_end_row > banding_start_row:  # 유효범위 체크
+                    report_fluxus_requests.append({
+                        "addBanding": {
+                            "bandedRange": {
+                                "range": {
+                                    "sheetId": ws_fluxus_report_id,
+                                    "startRowIndex": banding_start_row,
+                                    "endRowIndex": banding_end_row,
+                                    "startColumnIndex": banding_start_col,
+                                    "endColumnIndex": banding_end_col
+                                },
+                                "rowProperties": {
+                                    "firstBandColor": {
+                                        "red": 1.0, "green": 1.0, "blue": 1.0
+                                    },
+                                    "secondBandColor": {
+                                        "red": 0.896, "green": 0.988, "blue": 1
+                                    }
+                                },
+                                
+                            }
+                        }
+                    })
+                    report_fluxus_requests.append({
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "startRowIndex": banding_start_row,
+                                "endRowIndex": banding_end_row,
+                                "startColumnIndex": banding_start_col,
+                                "endColumnIndex": banding_end_col
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "horizontalAlignment": "CENTER",
+                                    "verticalAlignment": "MIDDLE",
+                                    "textFormat": {
+                                        "fontFamily": "Malgun Gothic",
+                                        "fontSize": 10,
+                                        "bold": False
+                                    }
+                                }
+                            },
+                            "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                        }
+                    })
 
 
-        # batchUpdate 분할 전송
-        if len(all_requests) >= 200:
-            sheet_svc.spreadsheets().batchUpdate(
-                spreadsheetId=out_file_id,
-                body={"requests": all_requests}
-            ).execute()
-            all_requests.clear()
-            time.sleep(1)
+                # (K-1) 앨범별 정산내역 타이틀
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_album-1,
+                            "endRowIndex": row_cursor_album,
+                            "startColumnIndex": 1, 
+                            "endColumnIndex": 2    
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (K-2) 앨범별 정산내역 헤더
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_album,
+                            "endRowIndex": row_cursor_album+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (K-3) 앨범별 정산내역 표 본문
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_album+1,
+                            "endRowIndex": row_cursor_sum2-1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (K-4) 앨범별 정산내역 합계행
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum2-1,
+                            "endRowIndex": row_cursor_sum2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (K-5) 합계행 병합
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum2-1,
+                            "endRowIndex": row_cursor_sum2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum2-1,
+                            "endRowIndex": row_cursor_sum2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum2-1,
+                            "endRowIndex": row_cursor_sum2,
+                            "startColumnIndex": 5,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+
+                # (L-1) 공제 내역 타이틀
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_deduction-1,  # (4-1)
+                            "endRowIndex": row_cursor_deduction,
+                            "startColumnIndex": 1,  # (B=1)
+                            "endColumnIndex": 2     # (E=4 => endIndex=5)
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (L-2) 공제 내역 헤더
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_deduction,
+                            "endRowIndex": row_cursor_deduction+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (L-3) 공제 내역 표 본문 (데이터부분)
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_deduction+1,
+                            "endRowIndex": row_cursor_deduction+2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (L-4) 공제 내역 표 본문 (합계 부분)
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_deduction+1,
+                            "endRowIndex": row_cursor_deduction+2,
+                            "startColumnIndex": 5,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+
+                # (M-1) 수익 배분 타이틀
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_rate-1,
+                            "endRowIndex": row_cursor_rate,
+                            "startColumnIndex": 1,  
+                            "endColumnIndex": 2    
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "LEFT",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (M-2) 수익 배분 헤더
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_rate,
+                            "endRowIndex": row_cursor_rate+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.3, "green": 0.82, "blue": 0.88},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (M-3) 수익 배분 표 본문 
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_rate+1,
+                            "endRowIndex": row_cursor_rate+2,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                # (M-4) 수익 배분 표 합계행 병합
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum4,
+                            "endRowIndex": row_cursor_sum4+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum4,
+                            "endRowIndex": row_cursor_sum4+1,
+                            "startColumnIndex": 1,
+                            "endColumnIndex": 5
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+                report_fluxus_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_sum4,
+                            "endRowIndex": row_cursor_sum4+1,
+                            "startColumnIndex": 5,
+                            "endColumnIndex": 6
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {"red": 0.896, "green": 0.988, "blue": 1},
+                                "horizontalAlignment": "CENTER",
+                                "verticalAlignment": "MIDDLE",
+                                "textFormat": {
+                                    "fontFamily": "Malgun Gothic",
+                                    "fontSize": 10,
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
+                    }
+                })
+
+
+                # (N) 전체 테두리 화이트
+                report_fluxus_requests.append({
+                    "updateBorders": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 0,
+                            "endRowIndex": row_cursor_report_end,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 7
+                        },
+                        "top":    {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
+                        "bottom": {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
+                        "left":   {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
+                        "right":  {"style": "SOLID","width":1, "color":{"red":1,"green":1,"blue":1}},
+                        "innerHorizontal": {"style":"SOLID","width":1,"color":{"red":1,"green":1,"blue":1}},
+                        "innerVertical":   {"style":"SOLID","width":1,"color":{"red":1,"green":1,"blue":1}}
+                    }
+                })
+                
+
+                # (O) 표 부분 점선 
+                def add_dotted_borders(r1, r2, c1, c2):
+                    """바깥+안쪽 모두 DOTTED"""
+                    report_fluxus_requests.append({
+                        "updateBorders": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "startRowIndex": r1,
+                                "endRowIndex": r2,
+                                "startColumnIndex": c1,
+                                "endColumnIndex": c2
+                            },
+                            "top":    {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "bottom": {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "left":   {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "right":  {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "innerHorizontal": {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}},
+                            "innerVertical":   {"style": "DOTTED", "width": 1, "color":{"red":0,"green":0,"blue":0}}
+                        }
+                    })
+                # 1번 섹션 A14:G30 => row=13..30, col=0..7
+                add_dotted_borders(13, row_cursor_sum1, 1, 6)
+                # 2번 섹션 
+                add_dotted_borders(row_cursor_album, row_cursor_sum2, 1, 6)
+                # 3번 섹션 
+                add_dotted_borders(row_cursor_deduction, row_cursor_sum3-1, 1, 6)
+                # 4번 섹션 
+                add_dotted_borders(row_cursor_rate, row_cursor_sum4+1, 1, 6)
+                
+
+                # (P) 시트 외곽 검정 SOLID 
+                report_fluxus_requests.append({
+                    "updateBorders": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": 0,
+                            "endRowIndex": row_cursor_report_end,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 7
+                        },
+                        "top":    {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}},
+                        "bottom": {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}},
+                        "left":   {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}},
+                        "right":  {"style": "SOLID","width":1, "color":{"red":0,"green":0,"blue":0}}
+                        # innerHorizontal, innerVertical는 생략 => 기존 값 유지
+                    }
+                })
+                
+                all_requests.extend(report_fluxus_requests)
+
+                # batchUpdate 분할 전송
+                if len(all_requests) >= 200:
+                    sheet_svc.spreadsheets().batchUpdate(
+                        spreadsheetId=out_file_id,
+                        body={"requests": all_requests}
+                    ).execute()
+                    all_requests.clear()
+                    time.sleep(1)            
+            else:
+                print(f"소속 코드 오류: {one_sosok}")
+
 
     # ---------------------------
     # 마지막으로 남은 요청들을 일괄 처리
