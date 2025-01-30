@@ -432,7 +432,7 @@ def update_next_month_tab(song_cost_sh, ym: str):
     # batch_update에 쓸 requests
     requests_body = [
         {
-            "range": f"F{start_row}:F{end_row}",
+            "range": f"E{start_row}:E{end_row}",
             "values": updated_prev_vals
         },
         {
@@ -1171,7 +1171,7 @@ def section_three_upload_and_split_excel():
                 continue
             all_pairs[artist_name]["report"] = sn
         elif sn.endswith("(세부매출내역)"):
-            artist_name = sn[:-7].strip()  # '(세부매출내역)' 제거
+            artist_name = sn[:-8].strip()  # '(세부매출내역)' 제거
             if artist_name.startswith("FLUXUS_"):
                 artist_name = artist_name[len("FLUXUS_"):]
             elif artist_name.startswith("UMAG_"):
@@ -4341,6 +4341,18 @@ def generate_report(
                             "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
                         }
                     })
+                    report_fluxus_requests.append({
+                        "mergeCells": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "startRowIndex": banding_start_row,
+                                "endRowIndex": banding_end_row,
+                                "startColumnIndex": 2,
+                                "endColumnIndex": 4
+                            },
+                            "mergeType": "MERGE_ALL"
+                        }
+                    })
 
 
                 # (K-1) 앨범별 정산내역 타이틀
@@ -4390,7 +4402,58 @@ def generate_report(
                         "fields": "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)"
                     }
                 })
+                report_fluxus_requests.append({
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": ws_fluxus_report_id,
+                            "startRowIndex": row_cursor_album,
+                            "endRowIndex": row_cursor_album+1,
+                            "startColumnIndex": 2,
+                            "endColumnIndex": 4
+                        },
+                        "mergeType": "MERGE_ALL"
+                    }
+                })
                 # (K-3) 앨범별 정산내역 표 본문
+                merge_start_row = row_cursor_album + 1
+                merge_end_row = row_cursor_sum2 - 2
+                if merge_end_row > merge_start_row:  # 유효범위 체크
+                    report_fluxus_requests.append({
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "startRowIndex": merge_start_row,
+                                "endRowIndex": merge_end_row,
+                                "startColumnIndex": 2,
+                                "endColumnIndex": 4
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "horizontalAlignment": "CENTER",
+                                    "verticalAlignment": "MIDDLE",
+                                    "textFormat": {
+                                        "fontFamily": "Malgun Gothic",
+                                        "fontSize": 10,
+                                        "bold": False
+                                    }
+                                }
+                            },
+                            "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
+                        }
+                    })
+                    report_fluxus_requests.append({
+                        "mergeCells": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "startRowIndex": banding_start_row,
+                                "endRowIndex": banding_end_row,
+                                "startColumnIndex": 2,
+                                "endColumnIndex": 4
+                            },
+                            "mergeType": "MERGE_ALL"
+                        }
+                    })
+
                 report_fluxus_requests.append({
                     "repeatCell": {
                         "range": {
