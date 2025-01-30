@@ -3512,7 +3512,7 @@ def generate_report(
 
                 # (C) 정산율 / 최종 정산금액
                 rate_val = artist_cost_dict[artist]["정산요율"]
-                공제적용후 = sum_2 - deduct_val
+                공제적용후 = fluxus_sum_all - deduct_val
                 final_amount = 공제적용후 * (rate_val / 100.0)
                 
 
