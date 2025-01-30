@@ -3564,6 +3564,25 @@ def generate_report(
                         fluxus_album_sum[d["album"]] += fluxus_sum_2
                         row_cursor += 1
 
+
+                start_data_row = header_row_1 + 1
+                end_data_row   = row_cursor_sum1 - 2
+
+                for r_idx in range(start_data_row, end_data_row):
+                    report_fluxus_requests.append({
+                        "mergeCells": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "startRowIndex": r_idx,
+                                "endRowIndex": r_idx+1,
+                                "startColumnIndex": 2,  # C열
+                                "endColumnIndex": 4     # D열+1
+                            },
+                            "mergeType": "MERGE_ALL"
+                        }
+                    })
+
+
                 row_cursor += 2
                 # 합계
                 report_fluxus_matrix[row_cursor-1][1] = "합계"
@@ -3583,6 +3602,7 @@ def generate_report(
                 report_fluxus_matrix[row_cursor][5] = "매출액"
                 row_cursor += 1
 
+                start_album_data = row_cursor
                 for alb in sorted(fluxus_album_sum.keys(), key=album_sort_key):
                     amt = fluxus_album_sum[alb]
                     report_fluxus_matrix[row_cursor][1] = alb
@@ -3590,11 +3610,29 @@ def generate_report(
                     report_fluxus_matrix[row_cursor][5] = to_currency(amt)
                     row_cursor += 1
 
+                end_album_data = row_cursor  # 데이터 마지막 +1
+
                 row_cursor += 1
                 report_fluxus_matrix[row_cursor-1][1] = "합계"
                 report_fluxus_matrix[row_cursor-1][5] = to_currency(fluxus_sum_all)
                 row_cursor_sum2 = row_cursor
                 row_cursor += 1
+
+                # 병합 요청 누적
+                for r_idx in range(start_album_data, end_album_data):
+                    report_fluxus_requests.append({
+                        "mergeCells": {
+                            "range": {
+                                "sheetId": ws_fluxus_report_id,
+                                "startRowIndex": r_idx,
+                                "endRowIndex": r_idx+1,
+                                "startColumnIndex": 2,  # C열
+                                "endColumnIndex": 4     # D열+1
+                            },
+                            "mergeType": "MERGE_ALL"
+                        }
+                    })
+
 
                 # -----------------------------------------------------------------
                 # 3. 공제 내역
@@ -4341,18 +4379,6 @@ def generate_report(
                             "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
                         }
                     })
-                    report_fluxus_requests.append({
-                        "mergeCells": {
-                            "range": {
-                                "sheetId": ws_fluxus_report_id,
-                                "startRowIndex": banding_start_row,
-                                "endRowIndex": banding_end_row,
-                                "startColumnIndex": 2,
-                                "endColumnIndex": 4
-                            },
-                            "mergeType": "MERGE_ALL"
-                        }
-                    })
 
 
                 # (K-1) 앨범별 정산내역 타이틀
@@ -4415,45 +4441,6 @@ def generate_report(
                     }
                 })
                 # (K-3) 앨범별 정산내역 표 본문
-                merge_start_row = row_cursor_album + 1
-                merge_end_row = row_cursor_sum2 - 2
-                if merge_end_row > merge_start_row:  # 유효범위 체크
-                    report_fluxus_requests.append({
-                        "repeatCell": {
-                            "range": {
-                                "sheetId": ws_fluxus_report_id,
-                                "startRowIndex": merge_start_row,
-                                "endRowIndex": merge_end_row,
-                                "startColumnIndex": 2,
-                                "endColumnIndex": 4
-                            },
-                            "cell": {
-                                "userEnteredFormat": {
-                                    "horizontalAlignment": "CENTER",
-                                    "verticalAlignment": "MIDDLE",
-                                    "textFormat": {
-                                        "fontFamily": "Malgun Gothic",
-                                        "fontSize": 10,
-                                        "bold": False
-                                    }
-                                }
-                            },
-                            "fields": "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)"
-                        }
-                    })
-                    report_fluxus_requests.append({
-                        "mergeCells": {
-                            "range": {
-                                "sheetId": ws_fluxus_report_id,
-                                "startRowIndex": banding_start_row,
-                                "endRowIndex": banding_end_row,
-                                "startColumnIndex": 2,
-                                "endColumnIndex": 4
-                            },
-                            "mergeType": "MERGE_ALL"
-                        }
-                    })
-
                 report_fluxus_requests.append({
                     "repeatCell": {
                         "range": {
