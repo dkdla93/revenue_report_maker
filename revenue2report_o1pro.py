@@ -1594,7 +1594,7 @@ def generate_report(
 
 
     # ------------------- (C) 아티스트 목록 ---------------
-    all_artists = sorted(set(artist_cost_dict.keys()) | set(artist_revenue_dict.keys()))
+    all_artists = sorted(artist_cost_dict.keys())  # 곡비파일에 있는 아티스트만
     all_artists = [a for a in all_artists if a and a not in ("합계", "총계")]
     st.session_state["all_artists"] = all_artists
 
@@ -1643,6 +1643,8 @@ def generate_report(
     # ===================================================================
 
     all_requests = []  # batchUpdate requests 모음
+
+    all_artists = sorted(artist_cost_dict.keys())  # 곡비파일에 있는 아티스트만
 
     for i, artist in enumerate(all_artists):
         if artist not in artist_sosok_dict:
