@@ -3203,6 +3203,7 @@ def generate_report(
                         to_currency(fy_rv_val)
                     ])
 
+
                 # 합계
                 fluxus_detail_matrix.append(["합계","","","","","", to_currency(total_det)])
                 row_cursor_fluxus_detail_end = len(fluxus_detail_matrix)
@@ -3455,39 +3456,43 @@ def generate_report(
                 # 매출 합
                 fluxus_sum_1 = sum(d["revenue"] for d in fluxus_yt_details_sorted)  # "음원서비스별" 총합
                 fluxus_sum_2 = sum(d["revenue"] for d in fluxus_fs_details_sorted)
-                fluxus_sum_all = fluxus_sum_1 + fluxus_sum_2
 
 
-                # [추가] 앨범별 매출 dict
-                fs_album_sum = defaultdict(float)
-                for fs_item in fluxus_fs_details_sorted:
-                    alb_fs = fs_item["album"]
-                    rv_fs  = fs_item["revenue"]
-                    fs_album_sum[alb_fs] += rv_fs
-
-
-                # 앨범별 합
+                # 1) 앨범별 매출 합산 dict
                 fluxus_album_sum = defaultdict(float)
+                
+                # 1-A) 유튜브(yt)
                 for d in fluxus_yt_details_sorted:
                     fluxus_album_sum[d["album"]] += d["revenue"]
 
-                # (A) "곡비" = "전월 잔액 + 당월 발생액" (요청 사항)
+                # 1-B) 플럭서스 송(song)
+                for fs_item in fluxus_fs_details_sorted:
+                    fluxus_album_sum[fs_item["album"]] += fs_item["revenue"]
+
+                # 1-C) 전체 매출 합
+                fluxus_sum_all = sum(fluxus_album_sum.values())
+
+
+                # 2) 곡비(전월+당월) = prev_val + curr_val
                 prev_val = artist_cost_dict[artist]["전월잔액"]
                 curr_val = artist_cost_dict[artist]["당월발생"]
-                # 보고서 '3. 공제 내역'의 '곡비' 칼럼 값 = prev_val + curr_val
                 song_cost_for_report = prev_val + curr_val
 
-                # (B) 공제 금액 & 잔액
-                deduct_val = artist_cost_dict[artist]["당월차감액"]  # 이미 input_song cost에서 계산된 값
-                remain_val = artist_cost_dict[artist]["당월잔액"]   # 동일
-                # "공제 적용 후" 매출 = (음원 매출 합) - 공제금액 => sum_2 - deduct_val
-                # (단, 요청 사항/업무로직에 따라 정확히 어떻게 적용할지는 케이스별로 맞춤)
+                # 3) 공제 금액(deduct_val) = min( 전체매출, 곡비 )
+                deduct_val = min(fluxus_sum_all, song_cost_for_report)
 
-                # (C) 정산율 / 최종 정산금액
+                # 4) 공제 후 남은 곡비
+                remain_val = song_cost_for_report - deduct_val
+                remain_val = max(0, remain_val)
+
+                # 5) 공제 적용 금액 = 전체매출 - 공제금액
+                apply_val = fluxus_sum_all - deduct_val
+                apply_val = max(0, apply_val)
+
+                # 6) 정산율
                 rate_val = artist_cost_dict[artist]["정산요율"]
-                공제적용후 = fluxus_sum_all - deduct_val
-                final_amount = 공제적용후 * (rate_val / 100.0)
-                
+                final_amount = apply_val * (rate_val / 100.0)
+
 
                 # --------------------------------------
                 # 정산서 테이블(직접 row col 배열 채우기)
@@ -3542,7 +3547,8 @@ def generate_report(
                     fs_sum_for_this_album = fs_album_sum[alb]  # 위에서 만든 fs_album_sum 딕셔너리
                     # 한 줄 추가
                     report_fluxus_matrix[row_cursor][1] = alb
-                    report_fluxus_matrix[row_cursor][2] = "국내+해외(Fluxus Song)"
+                    report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({int(month_val)-1}월)"
+                    report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
                     report_fluxus_matrix[row_cursor][5] = to_currency(fs_sum_for_this_album)
                     row_cursor += 1
 
