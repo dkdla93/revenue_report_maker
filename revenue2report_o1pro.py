@@ -3565,8 +3565,12 @@ def generate_report(
                         row_cursor += 1
 
 
+                distinct_albums = set(d["앨범명"] for d in fluxus_fs_details_sorted)
+                album_count = len(distinct_albums)
+
                 start_data_row = header_row_1 + 1
-                end_data_row   = start_data_row + len(fluxus_yt_details_sorted) + len(fluxus_fs_details_sorted["앨범명"])
+                end_data_row   = start_data_row + len(fluxus_yt_details_sorted) + album_count
+                
 
                 for r_idx in range(start_data_row, end_data_row):
                     report_fluxus_requests.append({
