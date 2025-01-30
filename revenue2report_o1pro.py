@@ -1123,35 +1123,38 @@ def section_two_sheet_link_and_verification():
 # ------------------------------------------------------------------------------
 def section_three_upload_and_split_excel():
     """
-    곡비-보고서 통합 완료 후, 최종 생성된 구글시트(Excel 다운로드본)를
-    다시 업로드하여 [각 아티스트별] '정산서' + '세부매출내역' 탭 2개를
-    하나의 XLSX로 만들어 ZIP으로 다운로드합니다.
+    1) 보고서 구글시트에서 '파일→다운로드→Microsoft Excel(.xlsx)'로 받은 파일을 업로드
+    2) 업로드된 전체 워크북에서, 각 아티스트별 ‘정산서‘ 탭 + ‘세부매출내역’ 탭만 남기고
+       나머지 시트를 제거한 뒤, 해당 워크북을 ZIP으로 묶어 다운로드.
+    3) 이 방식으로 하면 구글시트에서 이미 적용된 서식이 그대로 보존됩니다.
     """
-    # 보고서가 생성된 뒤에만 진행
+    # (1) report_done 여부 확인
     if "report_done" not in st.session_state or not st.session_state["report_done"]:
         st.info("정산 보고서가 먼저 생성된 뒤에, 엑셀 업로드 가능합니다.")
         return
 
     st.subheader("3) 엑셀 업로드 후, [아티스트별] XLSX (정산서+세부매출내역) 생성")
-
-    st.write("""
+    st.write(
+    """
     **사용 순서**  
     1. 생성된 구글시트(보고서)에서 "**파일 → 다운로드 → Microsoft Excel (.xlsx)**"로 다운로드  
     2. 아래 업로드 버튼으로 방금 받은 .xlsx 파일을 업로드  
-    3. 아티스트별로 '정산서' 탭 + '세부매출내역' 탭만 묶은 XLSX를 각각 만들고, ZIP으로 묶어 다운로드
-    """)
+    3. 아티스트별로 '정산서' 탭 + '세부매출내역' 탭만 묶은 XLSX를 각각 만들고, ZIP으로 묶어 다운로드  
+    """
+    )
 
-    # (1) 파일 업로드
+    # (2) 파일 업로드
     uploaded_file = st.file_uploader("정산 보고서 .xlsx 파일 업로드", type=["xlsx"])
     if uploaded_file is None:
         return
 
-    # (2) 업로드된 엑셀 전체 로딩
+    # (3) 업로드된 엑셀 전체 로딩
     progress_bar = st.progress(0.0)
     progress_text = st.empty()
 
     original_file_data = uploaded_file.read()
     try:
+        # 전체 워크북 (구글시트에서 다운로드한 그대로)
         wb_all = openpyxl.load_workbook(io.BytesIO(original_file_data))
     except Exception as e:
         st.error(f"엑셀 파일을 읽는 중 오류 발생: {e}")
@@ -1162,42 +1165,38 @@ def section_three_upload_and_split_excel():
         st.warning("업로드된 엑셀 파일에 시트가 없습니다.")
         return
 
-    # (3) 아티스트별 (정산서, 세부매출내역) 시트 이름을 매칭
+    # (4) “어떤 아티스트”에 해당하는 탭들이 있는지 찾기
+    #     예: 'UMAG_홍길동(정산서)', 'UMAG_홍길동(세부매출내역)' 형태라고 가정
     from collections import defaultdict
     all_pairs = defaultdict(lambda: {"report": None, "detail": None})
 
-    # 예: 시트 이름이 "UMAG_홍길동(정산서)", "UMAG_홍길동(세부매출내역)" 처럼 되어 있다면
-    #     → 아티스트명은 중간의 "홍길동" 부분
-    # ※ 현재 코드에서는 “UMAG_”, “FLUXUS_” 같은 소속명까지 붙은 상태일 수도 있음. 
-    #    여기서는 앞부분 소속명 제거 + 괄호(정산서)/(세부매출내역) 제거 로직 적용
     for sn in sheet_names:
-        # (A) 정산서 탭
         if sn.endswith("(정산서)"):
-            artist_name = sn[:-5].strip()  # “…(정산서)” 5글자 제거
-            # 소속접두어 (예: UMAG_ / FLUXUS_) 제거
+            # 예: "UMAG_홍길동(정산서)" => 아티스트명 추출
+            artist_name = sn[:-5].strip()  # "(정산서)" 5글자 제거
+            # 소속 접두어 제거 (UMAG_, FLUXUS_ 등)
             if artist_name.startswith("UMAG_"):
-                artist_name = artist_name[len("UMAG_"):]
+                artist_name = artist_name[5:]
             elif artist_name.startswith("FLUXUS_"):
-                artist_name = artist_name[len("FLUXUS_"):]
+                artist_name = artist_name[7:]
+
             all_pairs[artist_name]["report"] = sn
 
-        # (B) 세부매출내역 탭
         elif sn.endswith("(세부매출내역)"):
-            artist_name = sn[:-8].strip()  # “…(세부매출내역)” 8글자 제거
-            # 소속접두어 제거
+            artist_name = sn[:-8].strip()
             if artist_name.startswith("UMAG_"):
-                artist_name = artist_name[len("UMAG_"):]
+                artist_name = artist_name[5:]
             elif artist_name.startswith("FLUXUS_"):
-                artist_name = artist_name[len("FLUXUS_"):]
+                artist_name = artist_name[7:]
+
             all_pairs[artist_name]["detail"] = sn
+        else:
+            # 그외 시트는 무시
+            pass
 
-        # (C) 그 외 시트들은 무시
-
-    # (4) ZIP 파일로 묶기
+    # (5) ZIP 파일로 묶기
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        # all_pairs: { "홍길동": {"report":"UMAG_홍길동(정산서)", "detail":"UMAG_홍길동(세부매출내역)"},
-        #              "김영희": {"report":"UMAG_김영희(정산서)", ...} ... }
         all_artist_list = list(all_pairs.keys())
         total_artists = len(all_artist_list)
 
@@ -1207,46 +1206,41 @@ def section_three_upload_and_split_excel():
             progress_text.info(f"{int(ratio*100)}% - '{artist}' 처리 중...")
 
             pair_info = all_pairs[artist]
-            ws_report_name = pair_info["report"]
-            ws_detail_name = pair_info["detail"]
+            ws_report_name = pair_info["report"]   # (정산서) 원본시트명
+            ws_detail_name = pair_info["detail"]   # (세부매출) 원본시트명
 
-            # 둘 다 존재해야 정상 (한쪽만 있으면 스킵)
             if not ws_report_name or not ws_detail_name:
+                # 둘 중 하나라도 없으면 스킵
                 continue
 
-            # (5) 새 워크북 생성 → report / detail 2개 시트 복사
-            temp_wb = openpyxl.Workbook()
-            # 기본 시트(생성 직후 만들어지는 Sheet) 제거
-            default_ws = temp_wb.active
-            temp_wb.remove(default_ws)
+            # (6) “원본 워크북”을 통째로 복사해서, **필요한 2개 시트만 남기는 방식**:
+            temp_wb = openpyxl.load_workbook(io.BytesIO(original_file_data))
 
-            # (A) 정산서 복사
-            orig_ws_report = wb_all[ws_report_name]
-            new_ws_report = temp_wb.create_sheet("정산서")  # 여기서는 탭 이름을 간단히 "정산서"로
-            copy_sheet(orig_ws_report, new_ws_report)
+            # temp_wb의 모든 시트를 순회하면서,
+            # - 우리가 필요한 2개 시트를 제외하고는 전부 제거(remove)
+            for sname in temp_wb.sheetnames:
+                if sname not in [ws_report_name, ws_detail_name]:
+                    ws_to_remove = temp_wb[sname]
+                    temp_wb.remove(ws_to_remove)
 
-            # (B) 세부매출내역 복사
-            orig_ws_detail = wb_all[ws_detail_name]
-            new_ws_detail = temp_wb.create_sheet("세부매출내역")
-            copy_sheet(orig_ws_detail, new_ws_detail)
+            # (선택) 탭 이름을 “정산서”, “세부매출내역” 등으로 간단히 바꾸고 싶다면:
+            # temp_wb[ws_report_name].title = "정산서"
+            # temp_wb[ws_detail_name].title = "세부매출내역"
 
-            # (6) 파일명 지정
-            current_ym = st.session_state.get("ym", "")
-            safe_artist = artist.replace("/", "_").replace("\\", "_")
-            if not current_ym:
-                current_ym = "000000"
-
-            # 예) "홍길동_정산보고서_202501.xlsx"
-            filename_xlsx = f"{safe_artist}_정산보고서_{current_ym}.xlsx"
-
+            # (7) 엑셀파일로 저장
             single_buf = io.BytesIO()
             temp_wb.save(single_buf)
             single_buf.seek(0)
 
+            # 아티스트 이름이 파일명에 들어가도록
+            current_ym = st.session_state.get("ym", "000000")
+            safe_artist = artist.replace("/", "_").replace("\\", "_")
+            filename_xlsx = f"{safe_artist}_정산보고서_{current_ym}.xlsx"
+
             # ZIP 내부에 저장
             zf.writestr(filename_xlsx, single_buf.getvalue())
 
-    # (7) ZIP 다운로드 버튼
+    # (8) 최종 ZIP 다운로드
     zip_buf.seek(0)
     progress_text.success("아티스트별 (정산서+세부매출내역) 엑셀 생성 완료!")
     st.download_button(
@@ -1255,39 +1249,6 @@ def section_three_upload_and_split_excel():
         file_name="report_by_artist.zip",
         mime="application/zip"
     )
-
-
-def copy_sheet(src_ws, dst_ws):
-    """
-    openpyxl을 사용해 시트 전체를 복제하여 (서식/너비 포함) 복사하는 헬퍼 함수.
-    """
-    from copy import copy
-    max_row = src_ws.max_row
-    max_col = src_ws.max_column
-
-    # (1) 각 셀의 값/스타일 복사
-    for r in range(1, max_row + 1):
-        # 행 높이
-        if src_ws.row_dimensions[r].height is not None:
-            dst_ws.row_dimensions[r].height = src_ws.row_dimensions[r].height
-
-        for c in range(1, max_col + 1):
-            cell_src = src_ws.cell(row=r, column=c)
-            cell_dst = dst_ws.cell(row=r, column=c, value=cell_src.value)
-
-            if cell_src.has_style:
-                cell_dst.font = copy(cell_src.font)
-                cell_dst.border = copy(cell_src.border)
-                cell_dst.fill = copy(cell_src.fill)
-                cell_dst.number_format = copy(cell_src.number_format)
-                cell_dst.protection = copy(cell_src.protection)
-                cell_dst.alignment = copy(cell_src.alignment)
-
-    # (2) 열 너비
-    for c in range(1, max_col + 1):
-        col_letter = openpyxl.utils.get_column_letter(c)
-        if src_ws.column_dimensions[col_letter].width is not None:
-            dst_ws.column_dimensions[col_letter].width = src_ws.column_dimensions[col_letter].width
 
 
 
@@ -3495,6 +3456,15 @@ def generate_report(
                 fluxus_sum_2 = sum(d["revenue"] for d in fluxus_fs_details_sorted)
                 fluxus_sum_all = fluxus_sum_1 + fluxus_sum_2
 
+
+                # [추가] 앨범별 매출 dict
+                fs_album_sum = defaultdict(float)
+                for fs_item in fluxus_fs_details_sorted:
+                    alb_fs = fs_item["album"]
+                    rv_fs  = fs_item["revenue"]
+                    fs_album_sum[alb_fs] += rv_fs
+
+
                 # 앨범별 합
                 fluxus_album_sum = defaultdict(float)
                 for d in fluxus_yt_details_sorted:
@@ -3549,24 +3519,30 @@ def generate_report(
                 for i_h, val_h in enumerate(headers_1):
                     report_fluxus_matrix[header_row_1][1 + i_h] = val_h
 
-                row_cursor = header_row_1 + 1
-                for d in fluxus_yt_details_sorted:
-                    album_count_index = 0
-                    album_count = len(d["album"])
-                    rv = d["revenue"]
-                    report_fluxus_matrix[row_cursor][1] = d["album"]
-                    report_fluxus_matrix[row_cursor][2] = d["track_title"]
-                    report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
-                    report_fluxus_matrix[row_cursor][5] = to_currency(rv)
-                    row_cursor += 1
-                    album_count_index += 1
-                    if album_count_index == album_count:
-                        report_fluxus_matrix[row_cursor][1] = d["album"]
-                        report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({int(month_val)-1}월)"
+
+                import itertools
+                fluxus_yt_details_sorted = sorted(fluxus_yt_details, key=lambda d: album_sort_key(d["album"]))
+
+                # (2) groupby
+                for alb, grp_iter in itertools.groupby(fluxus_yt_details_sorted, key=lambda x: x["album"]):
+                    track_list = list(grp_iter)
+
+                    # [A] 해당 앨범의 모든 트랙(유튜브) 출력
+                    for d in track_list:
+                        rv = d["revenue"]
+                        report_fluxus_matrix[row_cursor][1] = d["album"]       # 앨범명
+                        report_fluxus_matrix[row_cursor][2] = d["track_title"] # 트랙제목
                         report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
-                        report_fluxus_matrix[row_cursor][5] = to_currency(fluxus_sum_2)
-                        fluxus_album_sum[d["album"]] += fluxus_sum_2
+                        report_fluxus_matrix[row_cursor][5] = to_currency(rv)
                         row_cursor += 1
+
+                    # [B] 트랙 모두 출력 뒤, "국내+해외 플랫폼 합계" 한 줄
+                    fs_sum_for_this_album = fs_album_sum[alb]  # 위에서 만든 fs_album_sum 딕셔너리
+                    # 한 줄 추가
+                    report_fluxus_matrix[row_cursor][1] = alb
+                    report_fluxus_matrix[row_cursor][2] = "국내+해외(Fluxus Song)"
+                    report_fluxus_matrix[row_cursor][5] = to_currency(fs_sum_for_this_album)
+                    row_cursor += 1
 
 
                 distinct_albums = set(d["album"] for d in fluxus_fs_details_sorted)
