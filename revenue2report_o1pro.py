@@ -1169,85 +1169,119 @@ def section_three_upload_and_split_excel():
     # (4) “어떤 아티스트”에 해당하는 탭들이 있는지 찾기
     #     예: 'UMAG_홍길동(정산서)', 'UMAG_홍길동(세부매출내역)' 형태라고 가정
     from collections import defaultdict
-    all_pairs = defaultdict(lambda: {"report": None, "detail": None})
+    all_artists_sheets = defaultdict(
+        lambda: {
+            "umag_report": None,
+            "umag_detail": None,
+            "fluxus_report": None,
+            "fluxus_detail": None
+        }
+    )
 
     for sn in sheet_names:
-        if sn.endswith("(정산서)"):
-            # 예: "UMAG_홍길동(정산서)" => 아티스트명 추출
-            artist_name = sn[:-5].strip()  # "(정산서)" 5글자 제거
-            # 소속 접두어 제거 (UMAG_, FLUXUS_ 등)
-            if artist_name.startswith("UMAG_"):
-                artist_name = artist_name[5:]
-            elif artist_name.startswith("FLUXUS_"):
-                artist_name = artist_name[7:]
+        if not ("(정산서)" in sn or "(세부매출내역)" in sn):
+            # 스킵
+            continue
 
-            all_pairs[artist_name]["report"] = sn
+        # 2) 소속 파싱
+        affiliate = None
+        artist_name = None
 
-        elif sn.endswith("(세부매출내역)"):
-            artist_name = sn[:-8].strip()
-            if artist_name.startswith("UMAG_"):
-                artist_name = artist_name[5:]
-            elif artist_name.startswith("FLUXUS_"):
-                artist_name = artist_name[7:]
-
-            all_pairs[artist_name]["detail"] = sn
+        # (A) UMAG_ 로 시작하면 affiliate="UMAG"
+        if sn.startswith("UMAG_"):
+            affiliate = "umag"
+            # "UMAG_홍길동(정산서)" → "홍길동(정산서)"
+            tmp = sn[len("UMAG_"):]
+        elif sn.startswith("FLUXUS_"):
+            affiliate = "fluxus"
+            tmp = sn[len("FLUXUS_"):]
         else:
-            # 그외 시트는 무시
-            pass
+            # 혹시 소속없는 시트는 pass
+            continue
 
-    # (5) ZIP 파일로 묶기
+        # (B) tmp가 예: "홍길동(정산서)" or "홍길동(세부매출내역)"
+        if tmp.endswith("(정산서)"):
+            # artist_name = tmp[:-5].strip() → (정산서) 5글자
+            artist_name = tmp[:-5].strip()
+            is_report = True
+        elif tmp.endswith("(세부매출내역)"):
+            artist_name = tmp[:-8].strip()
+            is_report = False
+        else:
+            continue
+
+        # 3) all_artists_sheets에 저장
+        if not artist_name:
+            continue
+
+        # 이제 artist_name을 최종 dict의 key로
+        if affiliate == "umag":
+            if is_report:
+                all_artists_sheets[artist_name]["umag_report"] = sn
+            else:
+                all_artists_sheets[artist_name]["umag_detail"] = sn
+        elif affiliate == "fluxus":
+            if is_report:
+                all_artists_sheets[artist_name]["fluxus_report"] = sn
+            else:
+                all_artists_sheets[artist_name]["fluxus_detail"] = sn
+
+
+    all_artist_list = sorted(all_artists_sheets.keys())
+    total_artists = len(all_artist_list)
+
+
+    # 5) ZIP으로 묶기
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        all_artist_list = list(all_pairs.keys())
-        total_artists = len(all_artist_list)
-
         for i, artist in enumerate(all_artist_list):
             ratio = (i + 1) / total_artists
             progress_bar.progress(ratio)
             progress_text.info(f"{int(ratio*100)}% - '{artist}' 처리 중...")
 
-            pair_info = all_pairs[artist]
-            ws_report_name = pair_info["report"]   # (정산서) 원본시트명
-            ws_detail_name = pair_info["detail"]   # (세부매출) 원본시트명
+            sheet_dict = all_artists_sheets[artist]
 
-            if not ws_report_name or not ws_detail_name:
-                # 둘 중 하나라도 없으면 스킵
+            # 이 아티스트가 가지는 (최대 4개) 탭
+            # None이 아닌 것만 수집
+            keep_sheets = []
+            for sname in [sheet_dict["umag_report"],
+                          sheet_dict["umag_detail"],
+                          sheet_dict["fluxus_report"],
+                          sheet_dict["fluxus_detail"]]:
+                if sname is not None:
+                    keep_sheets.append(sname)
+
+            if not keep_sheets:
+                # 이 아티스트는 시트가 하나도 없으면 스킵
                 continue
 
-            # (6) “원본 워크북”을 통째로 복사해서, **필요한 2개 시트만 남기는 방식**:
+            # (A) 원본 워크북 복사
             temp_wb = openpyxl.load_workbook(io.BytesIO(original_file_data))
 
-            # temp_wb의 모든 시트를 순회하면서,
-            # - 우리가 필요한 2개 시트를 제외하고는 전부 제거(remove)
+            # (B) 필요 시트(keep_sheets)만 남기고 전부 제거
             for sname in temp_wb.sheetnames:
-                if sname not in [ws_report_name, ws_detail_name]:
-                    ws_to_remove = temp_wb[sname]
-                    temp_wb.remove(ws_to_remove)
+                if sname not in keep_sheets:
+                    ws_del = temp_wb[sname]
+                    temp_wb.remove(ws_del)
 
-            # (선택) 탭 이름을 “정산서”, “세부매출내역” 등으로 간단히 바꾸고 싶다면:
-            # temp_wb[ws_report_name].title = "정산서"
-            # temp_wb[ws_detail_name].title = "세부매출내역"
-
-            # (7) 엑셀파일로 저장
+            # (C) 저장
             single_buf = io.BytesIO()
             temp_wb.save(single_buf)
             single_buf.seek(0)
 
-            # 아티스트 이름이 파일명에 들어가도록
             current_ym = st.session_state.get("ym", "000000")
             safe_artist = artist.replace("/", "_").replace("\\", "_")
+            # 예: "홍길동_정산보고서_202501.xlsx"
             filename_xlsx = f"{safe_artist}_정산보고서_{current_ym}.xlsx"
 
-            # ZIP 내부에 저장
             zf.writestr(filename_xlsx, single_buf.getvalue())
 
-    # (8) 최종 ZIP 다운로드
     zip_buf.seek(0)
-    progress_text.success("아티스트별 (정산서+세부매출내역) 엑셀 생성 완료!")
+    progress_text.success("모든 아티스트 처리 완료! ZIP 다운로드 가능")
     st.download_button(
         label="ZIP 다운로드",
         data=zip_buf.getvalue(),
-        file_name="report_by_artist.zip",
+        file_name=f"report_revenue_{current_ym}.zip",
         mime="application/zip"
     )
 
