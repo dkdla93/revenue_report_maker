@@ -8,7 +8,6 @@ import zipfile
 import requests as req
 import unicodedata
 import pandas as pd
-import itertools
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -477,6 +476,21 @@ def section_zero_prepare_song_cost():
     import pandas as pd  # 함수 시작부
 
     st.subheader("0) 곡비 파일 수정")
+
+    # 가이드를 접을 수 있게 만듭니다.
+    with st.expander("사용자 가이드"):
+        st.markdown(
+            """
+            [사용안내]
+            1. 가장 먼저 'input_song cost' 시트에서 이번 달(YYYYMM) 탭을 열고,
+            '당월 발생액' 값을 업데이트 하세요.
+            2. 프로그램의 "곡비 파일 수정하기" 버튼을 누르면,
+            - 직전 달 전월 잔액과 이번 달 소속별 매출(UMAG, FLUXUS)을 참조하여
+                해당 아티스트의 전월 잔액, 당월 차감액, 당월 잔액을 자동 업데이트합니다.
+            3. 만약 'input_online revenue'에서 아티스트 매핑이 안 된 경우,
+            결과 화면에서 '누락 행 목록'을 확인하세요.
+            """
+        )
 
     default_ym = st.session_state.get("ym", "")
     new_ym = st.text_input("진행기간(YYYYMM) - (곡비 파일 수정용)", default_ym)
@@ -1045,6 +1059,21 @@ def section_one_report_input():
     """
     st.subheader("1) 정산 보고서 정보 입력 항목")
 
+    # 가이드를 접을 수 있게 만듭니다.
+    with st.expander("사용자 가이드"):
+        st.markdown(
+            """
+            [사용안내]
+            1. '진행기간(YYYYMM)'과 '보고서 발행 날짜(YYYY-MM-DD)'를 입력합니다.
+            2. "정산 보고서 생성 시작" 버튼을 누르면,
+            - 'input_song cost'와 'input_online revenue' 데이터를 조회하여
+                새로운 구글 스프레드시트를 생성합니다.
+            3. 생성된 스프레드시트에는 각 소속의 아티스트별 (정산서/세부매출내역) 탭이 자동 생성되며,
+            각종 수치(곡비, 매출, 공제 금액, 잔액 등)가 반영됩니다.
+            * 소속이 2개인 경우, 2개 소속의 정산서/세부매출내역 탭이 모두 생성됩니다.
+            """
+        )
+
     default_ym = st.session_state.get("ym", "")
     default_report_date = st.session_state.get("report_date", "")
 
@@ -1097,6 +1126,18 @@ def section_two_sheet_link_and_verification():
     if "report_done" in st.session_state and st.session_state["report_done"]:
         st.subheader("2) 정산 보고서 시트링크 및 검증")
 
+        # 가이드를 접을 수 있게 만듭니다.
+        with st.expander("사용자 가이드"):
+            st.markdown(
+                """
+                [사용안내]
+                1. 위 섹션에서 보고서 생성이 완료되면, 생성된 구글 스프레드시트 링크를 확인할 수 있습니다.
+                2. '세부 검증 내용' 탭에서는 원본 데이터와 생성된 보고서 간 매핑 여부, 매출액/공제액 합 등이 올바른지 확인할 수 있습니다.
+                3. 만약 오류나 누락이 있다면, 그 목록이 표시되어 수동 확인 및 수정할 수 있습니다.
+                """
+            )
+
+
         tab1, tab2 = st.tabs(["보고서 링크 / 요약", "세부 검증 내용"])
 
         with tab1:
@@ -1124,38 +1165,40 @@ def section_two_sheet_link_and_verification():
 # ------------------------------------------------------------------------------
 def section_three_upload_and_split_excel():
     """
-    1) 보고서 구글시트에서 '파일→다운로드→Microsoft Excel(.xlsx)'로 받은 파일을 업로드
-    2) 업로드된 전체 워크북에서, 각 아티스트별 ‘정산서‘ 탭 + ‘세부매출내역’ 탭만 남기고
-       나머지 시트를 제거한 뒤, 해당 워크북을 ZIP으로 묶어 다운로드.
-    3) 이 방식으로 하면 구글시트에서 이미 적용된 서식이 그대로 보존됩니다.
+    곡비-보고서 통합 완료 후, 최종 생성된 구글시트(Excel 다운로드본)를
+    다시 업로드하여 [각 아티스트별] '정산서' + '세부매출내역' 탭 2개를
+    하나의 XLSX로 만들어 ZIP으로 다운로드합니다.
     """
-    # (1) report_done 여부 확인
+    # 보고서가 생성된 뒤에만 진행
     if "report_done" not in st.session_state or not st.session_state["report_done"]:
         st.info("정산 보고서가 먼저 생성된 뒤에, 엑셀 업로드 가능합니다.")
         return
 
     st.subheader("3) 엑셀 업로드 후, [아티스트별] XLSX (정산서+세부매출내역) 생성")
-    st.write(
-    """
-    **사용 순서**  
-    1. 생성된 구글시트(보고서)에서 "**파일 → 다운로드 → Microsoft Excel (.xlsx)**"로 다운로드  
-    2. 아래 업로드 버튼으로 방금 받은 .xlsx 파일을 업로드  
-    3. 아티스트별로 '정산서' 탭 + '세부매출내역' 탭만 묶은 XLSX를 각각 만들고, ZIP으로 묶어 다운로드  
-    """
-    )
 
-    # (2) 파일 업로드
+    # 가이드를 접을 수 있게 만듭니다.
+    with st.expander("사용자 가이드"):
+        st.markdown(
+            """
+            [사용안내]
+            1. 생성된 구글시트(보고서)를 '엑셀(.xlsx)'로 다운로드받습니다.
+            2. 본 프로그램에 업로드하면, 아티스트별로 '정산서' + '세부매출내역' 탭만 포함된 XLSX 파일이 각각 분리 생성됩니다.
+            3. 생성된 XLSX를 하나로 묶은 ZIP 파일을 다운로드하여, 아티스트별 보고서를 개별 확인할 수 있습니다.
+            * 소속이 2개인 경우, 2개 소속의 정산서/세부매출내역 탭이 모두 생성됩니다.
+            """
+        )
+
+    # (1) 파일 업로드
     uploaded_file = st.file_uploader("정산 보고서 .xlsx 파일 업로드", type=["xlsx"])
     if uploaded_file is None:
         return
 
-    # (3) 업로드된 엑셀 전체 로딩
+    # (2) 업로드된 엑셀 전체 로딩
     progress_bar = st.progress(0.0)
     progress_text = st.empty()
 
     original_file_data = uploaded_file.read()
     try:
-        # 전체 워크북 (구글시트에서 다운로드한 그대로)
         wb_all = openpyxl.load_workbook(io.BytesIO(original_file_data))
     except Exception as e:
         st.error(f"엑셀 파일을 읽는 중 오류 발생: {e}")
@@ -1166,124 +1209,132 @@ def section_three_upload_and_split_excel():
         st.warning("업로드된 엑셀 파일에 시트가 없습니다.")
         return
 
-    # (4) “어떤 아티스트”에 해당하는 탭들이 있는지 찾기
-    #     예: 'UMAG_홍길동(정산서)', 'UMAG_홍길동(세부매출내역)' 형태라고 가정
+    # (3) 아티스트별 (정산서, 세부매출내역) 시트 이름을 매칭
     from collections import defaultdict
-    all_artists_sheets = defaultdict(
-        lambda: {
-            "umag_report": None,
-            "umag_detail": None,
-            "fluxus_report": None,
-            "fluxus_detail": None
-        }
-    )
+    all_pairs = defaultdict(lambda: {"report": None, "detail": None})
 
+    # 예: 시트 이름이 "UMAG_홍길동(정산서)", "UMAG_홍길동(세부매출내역)" 처럼 되어 있다면
+    #     → 아티스트명은 중간의 "홍길동" 부분
+    # ※ 현재 코드에서는 “UMAG_”, “FLUXUS_” 같은 소속명까지 붙은 상태일 수도 있음. 
+    #    여기서는 앞부분 소속명 제거 + 괄호(정산서)/(세부매출내역) 제거 로직 적용
     for sn in sheet_names:
-        if not ("(정산서)" in sn or "(세부매출내역)" in sn):
-            # 스킵
-            continue
+        # (A) 정산서 탭
+        if sn.endswith("(정산서)"):
+            artist_name = sn[:-5].strip()  # “…(정산서)” 5글자 제거
+            # 소속접두어 (예: UMAG_ / FLUXUS_) 제거
+            if artist_name.startswith("UMAG_"):
+                artist_name = artist_name[len("UMAG_"):]
+            elif artist_name.startswith("FLUXUS_"):
+                artist_name = artist_name[len("FLUXUS_"):]
+            all_pairs[artist_name]["report"] = sn
 
-        # 2) 소속 파싱
-        affiliate = None
-        artist_name = None
+        # (B) 세부매출내역 탭
+        elif sn.endswith("(세부매출내역)"):
+            artist_name = sn[:-8].strip()  # “…(세부매출내역)” 8글자 제거
+            # 소속접두어 제거
+            if artist_name.startswith("UMAG_"):
+                artist_name = artist_name[len("UMAG_"):]
+            elif artist_name.startswith("FLUXUS_"):
+                artist_name = artist_name[len("FLUXUS_"):]
+            all_pairs[artist_name]["detail"] = sn
 
-        # (A) UMAG_ 로 시작하면 affiliate="UMAG"
-        if sn.startswith("UMAG_"):
-            affiliate = "umag"
-            # "UMAG_홍길동(정산서)" → "홍길동(정산서)"
-            tmp = sn[len("UMAG_"):]
-        elif sn.startswith("FLUXUS_"):
-            affiliate = "fluxus"
-            tmp = sn[len("FLUXUS_"):]
-        else:
-            # 혹시 소속없는 시트는 pass
-            continue
+        # (C) 그 외 시트들은 무시
 
-        # (B) tmp가 예: "홍길동(정산서)" or "홍길동(세부매출내역)"
-        if tmp.endswith("(정산서)"):
-            # artist_name = tmp[:-5].strip() → (정산서) 5글자
-            artist_name = tmp[:-5].strip()
-            is_report = True
-        elif tmp.endswith("(세부매출내역)"):
-            artist_name = tmp[:-8].strip()
-            is_report = False
-        else:
-            continue
-
-        # 3) all_artists_sheets에 저장
-        if not artist_name:
-            continue
-
-        # 이제 artist_name을 최종 dict의 key로
-        if affiliate == "umag":
-            if is_report:
-                all_artists_sheets[artist_name]["umag_report"] = sn
-            else:
-                all_artists_sheets[artist_name]["umag_detail"] = sn
-        elif affiliate == "fluxus":
-            if is_report:
-                all_artists_sheets[artist_name]["fluxus_report"] = sn
-            else:
-                all_artists_sheets[artist_name]["fluxus_detail"] = sn
-
-
-    all_artist_list = sorted(all_artists_sheets.keys())
-    total_artists = len(all_artist_list)
-
-
-    # 5) ZIP으로 묶기
+    # (4) ZIP 파일로 묶기
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        # all_pairs: { "홍길동": {"report":"UMAG_홍길동(정산서)", "detail":"UMAG_홍길동(세부매출내역)"},
+        #              "김영희": {"report":"UMAG_김영희(정산서)", ...} ... }
+        all_artist_list = list(all_pairs.keys())
+        total_artists = len(all_artist_list)
+
         for i, artist in enumerate(all_artist_list):
             ratio = (i + 1) / total_artists
             progress_bar.progress(ratio)
             progress_text.info(f"{int(ratio*100)}% - '{artist}' 처리 중...")
 
-            sheet_dict = all_artists_sheets[artist]
+            pair_info = all_pairs[artist]
+            ws_report_name = pair_info["report"]
+            ws_detail_name = pair_info["detail"]
 
-            # 이 아티스트가 가지는 (최대 4개) 탭
-            # None이 아닌 것만 수집
-            keep_sheets = []
-            for sname in [sheet_dict["umag_report"],
-                          sheet_dict["umag_detail"],
-                          sheet_dict["fluxus_report"],
-                          sheet_dict["fluxus_detail"]]:
-                if sname is not None:
-                    keep_sheets.append(sname)
-
-            if not keep_sheets:
-                # 이 아티스트는 시트가 하나도 없으면 스킵
+            # 둘 다 존재해야 정상 (한쪽만 있으면 스킵)
+            if not ws_report_name or not ws_detail_name:
                 continue
 
-            # (A) 원본 워크북 복사
-            temp_wb = openpyxl.load_workbook(io.BytesIO(original_file_data))
+            # (5) 새 워크북 생성 → report / detail 2개 시트 복사
+            temp_wb = openpyxl.Workbook()
+            # 기본 시트(생성 직후 만들어지는 Sheet) 제거
+            default_ws = temp_wb.active
+            temp_wb.remove(default_ws)
 
-            # (B) 필요 시트(keep_sheets)만 남기고 전부 제거
-            for sname in temp_wb.sheetnames:
-                if sname not in keep_sheets:
-                    ws_del = temp_wb[sname]
-                    temp_wb.remove(ws_del)
+            # (A) 정산서 복사
+            orig_ws_report = wb_all[ws_report_name]
+            new_ws_report = temp_wb.create_sheet("정산서")  # 여기서는 탭 이름을 간단히 "정산서"로
+            copy_sheet(orig_ws_report, new_ws_report)
 
-            # (C) 저장
+            # (B) 세부매출내역 복사
+            orig_ws_detail = wb_all[ws_detail_name]
+            new_ws_detail = temp_wb.create_sheet("세부매출내역")
+            copy_sheet(orig_ws_detail, new_ws_detail)
+
+            # (6) 파일명 지정
+            current_ym = st.session_state.get("ym", "")
+            safe_artist = artist.replace("/", "_").replace("\\", "_")
+            if not current_ym:
+                current_ym = "000000"
+
+            # 예) "홍길동_정산보고서_202501.xlsx"
+            filename_xlsx = f"{safe_artist}_정산보고서_{current_ym}.xlsx"
+
             single_buf = io.BytesIO()
             temp_wb.save(single_buf)
             single_buf.seek(0)
 
-            current_ym = st.session_state.get("ym", "000000")
-            safe_artist = artist.replace("/", "_").replace("\\", "_")
-            # 예: "홍길동_정산보고서_202501.xlsx"
-            filename_xlsx = f"{safe_artist}_정산보고서_{current_ym}.xlsx"
-
+            # ZIP 내부에 저장
             zf.writestr(filename_xlsx, single_buf.getvalue())
 
+    # (7) ZIP 다운로드 버튼
     zip_buf.seek(0)
-    progress_text.success("모든 아티스트 처리 완료! ZIP 다운로드 가능")
+    progress_text.success("아티스트별 (정산서+세부매출내역) 엑셀 생성 완료!")
     st.download_button(
         label="ZIP 다운로드",
         data=zip_buf.getvalue(),
-        file_name=f"report_revenue_{current_ym}.zip",
+        file_name="report_by_artist.zip",
         mime="application/zip"
     )
+
+
+def copy_sheet(src_ws, dst_ws):
+    """
+    openpyxl을 사용해 시트 전체를 복제하여 (서식/너비 포함) 복사하는 헬퍼 함수.
+    """
+    from copy import copy
+    max_row = src_ws.max_row
+    max_col = src_ws.max_column
+
+    # (1) 각 셀의 값/스타일 복사
+    for r in range(1, max_row + 1):
+        # 행 높이
+        if src_ws.row_dimensions[r].height is not None:
+            dst_ws.row_dimensions[r].height = src_ws.row_dimensions[r].height
+
+        for c in range(1, max_col + 1):
+            cell_src = src_ws.cell(row=r, column=c)
+            cell_dst = dst_ws.cell(row=r, column=c, value=cell_src.value)
+
+            if cell_src.has_style:
+                cell_dst.font = copy(cell_src.font)
+                cell_dst.border = copy(cell_src.border)
+                cell_dst.fill = copy(cell_src.fill)
+                cell_dst.number_format = copy(cell_src.number_format)
+                cell_dst.protection = copy(cell_src.protection)
+                cell_dst.alignment = copy(cell_src.alignment)
+
+    # (2) 열 너비
+    for c in range(1, max_col + 1):
+        col_letter = openpyxl.utils.get_column_letter(c)
+        if src_ws.column_dimensions[col_letter].width is not None:
+            dst_ws.column_dimensions[col_letter].width = src_ws.column_dimensions[col_letter].width
 
 
 
@@ -3237,7 +3288,6 @@ def generate_report(
                         to_currency(fy_rv_val)
                     ])
 
-
                 # 합계
                 fluxus_detail_matrix.append(["합계","","","","","", to_currency(total_det)])
                 row_cursor_fluxus_detail_end = len(fluxus_detail_matrix)
@@ -3490,45 +3540,30 @@ def generate_report(
                 # 매출 합
                 fluxus_sum_1 = sum(d["revenue"] for d in fluxus_yt_details_sorted)  # "음원서비스별" 총합
                 fluxus_sum_2 = sum(d["revenue"] for d in fluxus_fs_details_sorted)
+                fluxus_sum_all = fluxus_sum_1 + fluxus_sum_2
 
-
-                # 1) 앨범별 매출 합산 dict
+                # 앨범별 합
                 fluxus_album_sum = defaultdict(float)
-                fs_album_sum = defaultdict(float)
-
-                # 1-A) 유튜브(yt)
                 for d in fluxus_yt_details_sorted:
                     fluxus_album_sum[d["album"]] += d["revenue"]
 
-                # 1-B) 플럭서스 송(song)
-                for fs_item in fluxus_fs_details_sorted:
-                    fluxus_album_sum[fs_item["album"]] += fs_item["revenue"]
-                    fs_album_sum[fs_item["album"]] += fs_item["revenue"]
-
-                # 1-C) 전체 매출 합
-                fluxus_sum_all = sum(fluxus_album_sum.values())
-
-
-                # 2) 곡비(전월+당월) = prev_val + curr_val
+                # (A) "곡비" = "전월 잔액 + 당월 발생액" (요청 사항)
                 prev_val = artist_cost_dict[artist]["전월잔액"]
                 curr_val = artist_cost_dict[artist]["당월발생"]
+                # 보고서 '3. 공제 내역'의 '곡비' 칼럼 값 = prev_val + curr_val
                 song_cost_for_report = prev_val + curr_val
 
-                # 3) 공제 금액(deduct_val) = min( 전체매출, 곡비 )
-                deduct_val = min(fluxus_sum_all, song_cost_for_report)
+                # (B) 공제 금액 & 잔액
+                deduct_val = artist_cost_dict[artist]["당월차감액"]  # 이미 input_song cost에서 계산된 값
+                remain_val = artist_cost_dict[artist]["당월잔액"]   # 동일
+                # "공제 적용 후" 매출 = (음원 매출 합) - 공제금액 => sum_2 - deduct_val
+                # (단, 요청 사항/업무로직에 따라 정확히 어떻게 적용할지는 케이스별로 맞춤)
 
-                # 4) 공제 후 남은 곡비
-                remain_val = song_cost_for_report - deduct_val
-                remain_val = max(0, remain_val)
-
-                # 5) 공제 적용 금액 = 전체매출 - 공제금액
-                apply_val = fluxus_sum_all - deduct_val
-                apply_val = max(0, apply_val)
-
-                # 6) 정산율
+                # (C) 정산율 / 최종 정산금액
                 rate_val = artist_cost_dict[artist]["정산요율"]
-                final_amount = apply_val * (rate_val / 100.0)
-
+                공제적용후 = fluxus_sum_all - deduct_val
+                final_amount = 공제적용후 * (rate_val / 100.0)
+                
 
                 # --------------------------------------
                 # 정산서 테이블(직접 row col 배열 채우기)
@@ -3562,32 +3597,24 @@ def generate_report(
                     report_fluxus_matrix[header_row_1][1 + i_h] = val_h
 
                 row_cursor = header_row_1 + 1
-
-                import itertools
-                fluxus_yt_details_sorted = sorted(fluxus_yt_details, key=lambda d: album_sort_key(d["album"]))
-
-                # (2) groupby
-                for alb, grp_iter in itertools.groupby(fluxus_yt_details_sorted, key=lambda x: x["album"]):
-                    track_list = list(grp_iter)
-
-                    # [A] 해당 앨범의 모든 트랙(유튜브) 출력
-                    for d in track_list:
-                        rv = d["revenue"]
-                        report_fluxus_matrix[row_cursor][1] = d["album"]       # 앨범명
-                        report_fluxus_matrix[row_cursor][2] = d["track_title"] # 트랙제목
-                        report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
-                        report_fluxus_matrix[row_cursor][5] = to_currency(rv)
-                        row_cursor += 1
-
-                    # [B] 트랙 모두 출력 뒤, "국내+해외 플랫폼 합계" 한 줄
-                    fs_sum_for_this_album = fs_album_sum[alb]  # 위에서 만든 fs_album_sum 딕셔너리
-                    # 한 줄 추가
-                    report_fluxus_matrix[row_cursor][1] = alb
-                    report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({int(month_val)-1}월)"
+                for d in fluxus_yt_details_sorted:
+                    album_count_yt_index = 0
+                    album_count_yt = len(d["album"])
+                    rv = d["revenue"]
+                    report_fluxus_matrix[row_cursor][1] = d["album"]
+                    report_fluxus_matrix[row_cursor][2] = d["track_title"]
                     report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
-                    report_fluxus_matrix[row_cursor][5] = to_currency(fs_sum_for_this_album)
+                    report_fluxus_matrix[row_cursor][5] = to_currency(rv)
                     row_cursor += 1
-
+                    album_count_yt_index += 1
+                    if album_count_yt_index == album_count_yt:
+                        report_fluxus_matrix[row_cursor][1] = d["album"]
+                        report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({int(month_val)-1}월)"
+                        report_fluxus_matrix[row_cursor][4] = f"{year_val}년 {month_val}월"
+                        report_fluxus_matrix[row_cursor][5] = to_currency(fluxus_sum_2)
+                        fluxus_album_sum[d["album"]] += fluxus_sum_2
+                        row_cursor += 1
+                        album_count_yt_index = 0
 
                 distinct_albums = set(d["album"] for d in fluxus_fs_details_sorted)
                 album_count = len(distinct_albums)
