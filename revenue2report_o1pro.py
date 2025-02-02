@@ -407,6 +407,7 @@ def update_next_month_tab(song_cost_sh, ym: str):
     try:
         idx_artist_new = new_header.index("아티스트명")
         idx_prev_new   = new_header.index("전월 잔액")
+        idx_curr_new   = new_header.index("당월 발생액")   # ★ 추가 부분
         idx_deduct_new = new_header.index("당월 차감액")
         # idx_remain_new = new_header.index("당월 잔액")
     except ValueError:
@@ -417,12 +418,14 @@ def update_next_month_tab(song_cost_sh, ym: str):
     content = new_data[1:-1]
 
     updated_prev_vals = []   # D열에 들어갈 값
+    updated_curr_vals   = []  # E열(예: 당월 발생액) -> 0으로 초기화
     updated_deduct_vals = [] # F열에 들어갈 값
 
     for row in content:
         artist = row[idx_artist_new].strip()
         old_val = prev_month_dict.get(artist, 0.0)  # 전월 잔액
         updated_prev_vals.append([old_val])
+        updated_curr_vals.append(["0"])       # 새 탭 '당월 발생액' 칸 (0)
         updated_deduct_vals.append(["0"])  # 당월 차감액은 0으로 초기화
 
     row_count = len(content)
@@ -434,6 +437,10 @@ def update_next_month_tab(song_cost_sh, ym: str):
         {
             "range": f"E{start_row}:E{end_row}",
             "values": updated_prev_vals
+        },
+        {
+            "range": f"F{start_row}:F{end_row}",  # (★ 추가) 당월 발생액 열
+            "values": updated_curr_vals
         },
         {
             "range": f"G{start_row}:G{end_row}",
