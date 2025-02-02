@@ -235,11 +235,7 @@ def show_detailed_verification():
             df["구분"] = df["구분"].replace({
                 "input_online revenue_umag_integrated": "umag_integrated",
                 "input_online revenue_fluxus_yt": "fluxus_yt",
-                "input_online revenue_fluxus_song": "fluxus_song",
-                "revenue_fluxus_song": "fluxus_song",
-                "revenue_fluxus_yt":   "fluxus_yt",
-                "FLUXUS_song":         "fluxus_song",
-                "FLUXUS_yt":           "fluxus_yt",
+                "input_online revenue_fluxus_song": "fluxus_song"
             })
 
             # 2) fluxus_yt → 'TRACK TITLE'을 '서비스명'으로
@@ -273,7 +269,7 @@ def show_detailed_verification():
             for (artist, album), group_df in grouped:
                 # (A) 먼저 group_df의 원래 행(각 트랙/서비스명 등)을 추가
                 for _, row in group_df.iterrows():
-                    new_rows.append(row)
+                    new_rows.append(row.to_dict())
 
                 # (B) group_df의 원본_매출액 합계, 정산서_매출액 합계를 구함
                 orig_sum = group_df["원본_매출액"].sum()
@@ -320,7 +316,7 @@ def show_detailed_verification():
             df_styled = (
                 df_result.style
                 .format(format_dict)
-                .applymap(highlight_boolean, subset=bool_cols)
+                .map(highlight_boolean, subset=bool_cols)
                 .set_properties(
                     **{
                         "width": "180px"
@@ -885,15 +881,15 @@ def section_zero_prepare_song_cost():
             a_fy = clean_artist_name(row_fy[col_artist_fy])
 
             # 소문자로 변환한 값
-            a_lower = a_u.lower()
+            a_lower = a_fy.lower()
             # (1) 아티스트명이 공란, (2) 아티스트명 안에 '합계','총계','total' 포함, 
             # (3) 전부 숫자인 경우 -> 합계행으로 보고 스킵
             if (
-                not a_u 
-                or '합계' in a_u 
-                or '총계' in a_u 
+                not a_fy 
+                or '합계' in a_fy 
+                or '총계' in a_fy 
                 or 'total' in a_lower 
-                or a_u.isdigit()
+                or a_fy.isdigit()
             ):
                 continue
 
@@ -1913,7 +1909,7 @@ def generate_report(
                 row_cursor_detail_end = len(detail_matrix)
 
                 # 시트 업데이트
-                ws_detail.update("A1", detail_matrix)
+                ws_detail.update(range_name="A1", values=detail_matrix)
                 time.sleep(1)
 
                 # 세부매출내역 탭에 대한 서식/테두리 등 batch 요청
@@ -2268,7 +2264,7 @@ def generate_report(
                 row_cursor_report_end = row_cursor + 2
 
                 # 시트에 실제 업로드
-                ws_report.update("A1", report_matrix)
+                ws_report.update(range_name="A1", values=report_matrix)
                 time.sleep(1)
 
                 # ------------------------------------
@@ -2284,7 +2280,7 @@ def generate_report(
                         check_dict["verification_summary"]["artist_error_list"].append(artist)
 
                     row_report_item = {
-                        "구분": "input_online revenue_fluxus_yt",  # ← 추가
+                        "구분": "input_online revenue_umag_integrated",  # ← 추가
                         "아티스트": artist,
                         "앨범": d["album"],
                         "서비스명": d["service"],
@@ -3466,7 +3462,7 @@ def generate_report(
                 row_cursor_fluxus_detail_end = len(fluxus_detail_matrix)
 
                 # 시트 업데이트
-                ws_fluxus_detail.update("A1", fluxus_detail_matrix)
+                ws_fluxus_detail.update(range_name="A1", values=fluxus_detail_matrix)
                 time.sleep(1)
 
                 # 세부매출내역 탭에 대한 서식/테두리 등 batch 요청
@@ -3911,7 +3907,7 @@ def generate_report(
                 row_cursor_report_end = row_cursor + 2
 
                 # 시트에 실제 업로드
-                ws_fluxus_report.update("A1", report_fluxus_matrix)
+                ws_fluxus_report.update(range_name="A1", values=report_fluxus_matrix)
                 time.sleep(1)
 
                 # ------------------------------------
@@ -3927,15 +3923,38 @@ def generate_report(
                         check_dict["verification_summary"]["artist_error_list"].append(artist)
 
                     row_report_item = {
-                        "구분": "input_online revenue_fluxus_song",
+                        "구분": "input_online revenue_fluxus_yt",
                         "아티스트": artist,
                         "앨범": d["album"],
-                        "타이틀명": d["track_title"],
+                        "서비스명": d["track_title"],
                         "원본_매출액": original_val,
                         "정산서_매출액": report_val,
                         "match_매출액": is_match,
                     }
                     check_dict["details_verification"]["세부매출"].append(row_report_item)
+
+
+                # (2) fluxus_song_details => 새로 추가
+                for d in fluxus_fs_details_sorted:
+                    original_val = d["revenue"]
+                    report_val   = d["revenue"]  # 현재는 동일
+                    is_match = almost_equal(original_val, report_val)
+
+                    if not is_match:
+                        check_dict["verification_summary"]["total_errors"] += 1
+                        check_dict["verification_summary"]["artist_error_list"].append(artist)
+
+                    row_report_item = {
+                        "구분": "input_online revenue_fluxus_song",
+                        "아티스트": artist,
+                        "앨범": d["album"],
+                        "서비스명": d.get("country", ""),  # 예: "서비스 구분"이 들어갈 수도
+                        "원본_매출액": original_val,
+                        "정산서_매출액": report_val,
+                        "match_매출액": is_match,
+                    }
+                    check_dict["details_verification"]["세부매출"].append(row_report_item)
+
 
                 # (2) 공제 내역(곡비,공제금액,공제후잔액)
                 #   원본(= input_song cost) 값 vs 보고서 값
