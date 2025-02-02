@@ -225,12 +225,6 @@ def show_detailed_verification():
             import pandas as pd
             df = pd.DataFrame(rows)
 
-            # (추가) df["구분"] 실제 값이 어떤 것들이 있는지 찍어보기
-            if "구분" in df.columns:
-                st.write("### [디버그] df['구분']에 들어있는 고유값들:", df["구분"].unique())
-            else:
-                st.write("### [디버그] '구분' 컬럼이 존재하지 않습니다.")
-
             # 이하 기존 replace 로직 / fluxus_song 요약행 삽입 등 ...
             df["구분"] = df["구분"].replace({
                 "input_online revenue_umag_integrated": "umag_integrated",
@@ -3800,6 +3794,21 @@ def generate_report(
 
                     # [B] 트랙 모두 출력 뒤, "국내+해외 플랫폼 합계" 한 줄
                     fs_sum_for_this_album = fs_album_sum[alb]  # 위에서 만든 fs_album_sum 딕셔너리
+                    # match_매치 검증 추가
+                    original_val = fs_sum_for_this_album
+                    report_val   = fs_sum_for_this_album  # 보고서에서도 동일 금액 표기
+                    match_val    = almost_equal(original_val, report_val)
+                    row_report_item = {
+                        "구분": "input_online revenue_fluxus_song",
+                        "아티스트": artist,
+                        "앨범": alb,
+                        "서비스명": "국내, 해외 플랫폼(전월)",
+                        "원본_매출액": original_val,
+                        "정산서_매출액": report_val,
+                        "match_매출액": match_val
+                    }
+                    check_dict["details_verification"]["세부매출"].append(row_report_item)
+
                     # 한 줄 추가
                     report_fluxus_matrix[row_cursor][1] = alb
                     report_fluxus_matrix[row_cursor][2] = f"국내, 해외 플랫폼({int(month_val)-1}월)"
