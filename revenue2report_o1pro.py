@@ -225,18 +225,27 @@ def show_detailed_verification():
             import pandas as pd
             df = pd.DataFrame(rows)
 
-            # 1) 구분 값 치환 (input_online -> umag_integrated / fluxus_yt / fluxus_song)
+            # (추가) df["구분"] 실제 값이 어떤 것들이 있는지 찍어보기
             if "구분" in df.columns:
-                df["구분"] = df["구분"].replace({
-                    "input_online revenue_umag_integrated": "umag_integrated",
-                    "input_online revenue_fluxus_yt": "fluxus_yt",
-                    "input_online revenue_fluxus_song": "fluxus_song"
-                })
+                st.write("### [디버그] df['구분']에 들어있는 고유값들:", df["구분"].unique())
+            else:
+                st.write("### [디버그] '구분' 컬럼이 존재하지 않습니다.")
 
-            # 2) fluxus_yt → '타이틀명'을 '서비스명'으로
-            if "타이틀명" in df.columns:
-                df.loc[df["구분"] == "fluxus_yt", "서비스명"] = df["타이틀명"]
-                df.drop(columns=["타이틀명"], inplace=True)
+            # 이하 기존 replace 로직 / fluxus_song 요약행 삽입 등 ...
+            df["구분"] = df["구분"].replace({
+                "input_online revenue_umag_integrated": "umag_integrated",
+                "input_online revenue_fluxus_yt": "fluxus_yt",
+                "input_online revenue_fluxus_song": "fluxus_song",
+                "revenue_fluxus_song": "fluxus_song",
+                "revenue_fluxus_yt":   "fluxus_yt",
+                "FLUXUS_song":         "fluxus_song",
+                "FLUXUS_yt":           "fluxus_yt",
+            })
+
+            # 2) fluxus_yt → 'TRACK TITLE'을 '서비스명'으로
+            if "TRACK TITLE" in df.columns:
+                df.loc[df["구분"] == "fluxus_yt", "서비스명"] = df["TRACK TITLE"]
+                df.drop(columns=["TRACK TITLE"], inplace=True)
 
             # 3) fluxus_song → '서비스 구분'을 '서비스명'으로
             #    (혹시 "서비스 구분"이라는 칼럼이 있다면)
@@ -307,13 +316,6 @@ def show_detailed_verification():
             int_columns = ["원본_매출액", "정산서_매출액"]
             format_dict = {col: "{:.0f}" for col in int_columns if col in df_result.columns}
 
-            # 최종 dataframe 시각화
-            st.dataframe(
-                df_result.style
-                         .format(format_dict)
-                         .applymap(highlight_boolean, subset=bool_cols)
-            )
-
             # 4) 아티스트/앨범/서비스명 폭 넓히기
             df_styled = (
                 df_result.style
@@ -353,7 +355,7 @@ def normalized_month(m):
         return (yyyy, mm)
     return m
 
-def almost_equal(a, b, tol=1e-3):
+def almost_equal(a, b, tol=1):
     return abs(a - b) < tol
 
 def get_next_month_str(ym: str) -> str:
@@ -1299,6 +1301,17 @@ def section_two_sheet_link_and_verification():
             total_errors = ver_sum.get("total_errors", 0)
             artist_err_list = ver_sum.get("artist_error_list", [])
 
+            #     공제내역 / 수익배분율 / 음원서비스별매출 등이 담김
+            detail_rows = check_dict["details_verification"]["정산서"]
+
+            # (2) "match_곡비"나 "match_공제금액" 같은 칼럼 중 False가 있는 행만 필터
+            error_rows = []
+            for row in detail_rows:
+                # 예: 곡비 매칭 여부
+                if any(row.get(f"match_{col}") is False for col in ["곡비","공제금액","공제후잔액","정산율"]):
+                    error_rows.append(row)
+
+
             st.markdown("### 검증 요약")
 
             if total_errors == 0:
@@ -1308,6 +1321,11 @@ def section_two_sheet_link_and_verification():
                 if artist_err_list:
                     unique_artists = list(set(artist_err_list))
                     st.warning(f"다음 아티스트에서 불일치가 발생함: {unique_artists}")
+                    
+                    st.write("#### 정산서 검증에서 불일치인 항목들")
+                    import pandas as pd
+                    df_err = pd.DataFrame(error_rows)
+                    st.dataframe(df_err)
 
                 # 만약 좀 더 자세히 어떤 항목이 틀렸는지 짧게 보여주고 싶다면,
                 # check_dict["details_verification"]["정산서"] / ["세부매출"] 중에서 match_XXX=False 인 것만 필터링해
@@ -2266,8 +2284,8 @@ def generate_report(
                         check_dict["verification_summary"]["artist_error_list"].append(artist)
 
                     row_report_item = {
+                        "구분": "input_online revenue_fluxus_yt",  # ← 추가
                         "아티스트": artist,
-                        "구분": "음원서비스별매출",
                         "앨범": d["album"],
                         "서비스명": d["service"],
                         "원본_매출액": original_val,
@@ -3909,6 +3927,7 @@ def generate_report(
                         check_dict["verification_summary"]["artist_error_list"].append(artist)
 
                     row_report_item = {
+                        "구분": "input_online revenue_fluxus_song",
                         "아티스트": artist,
                         "앨범": d["album"],
                         "타이틀명": d["track_title"],
