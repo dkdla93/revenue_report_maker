@@ -278,6 +278,7 @@ def show_detailed_verification():
                     # 원본_매출액 / 정산서_매출액 은 합계 값
                     "원본_매출액": orig_sum,
                     "정산서_매출액": repo_sum,
+                    "match_매출액": almost_equal(orig_sum, repo_sum, 1)
                 }
                 # 필요하다면 다른 컬럼(예: match_매출액)은 False or None으로 넣어둘 수도 있음
                 new_rows.append(summary_row)
@@ -287,7 +288,7 @@ def show_detailed_verification():
 
             # (원한다면) df_result를 앨범명/아티스트명 순으로 다시 정렬
             # 여기서는 "구분" 순서도 고려할 수 있지만, 간단히 "아티스트, 앨범, 서비스명" 정도만
-            df_result.sort_values(by=["구분","아티스트","앨범","서비스명"], inplace=True, ignore_index=True)
+            # df_result.sort_values(by=["구분","아티스트","앨범","서비스명"], inplace=True, ignore_index=True)
 
             # 이제 df_result가 "국내, 해외 플랫폼(전월)" 요약 행이 삽입된 최종본
 
@@ -3794,20 +3795,6 @@ def generate_report(
 
                     # [B] 트랙 모두 출력 뒤, "국내+해외 플랫폼 합계" 한 줄
                     fs_sum_for_this_album = fs_album_sum[alb]  # 위에서 만든 fs_album_sum 딕셔너리
-                    # match_매치 검증 추가
-                    original_val = fs_sum_for_this_album
-                    report_val   = fs_sum_for_this_album  # 보고서에서도 동일 금액 표기
-                    match_val    = almost_equal(original_val, report_val)
-                    row_report_item = {
-                        "구분": "input_online revenue_fluxus_song",
-                        "아티스트": artist,
-                        "앨범": alb,
-                        "서비스명": "국내, 해외 플랫폼(전월)",
-                        "원본_매출액": original_val,
-                        "정산서_매출액": report_val,
-                        "match_매출액": match_val
-                    }
-                    check_dict["details_verification"]["세부매출"].append(row_report_item)
 
                     # 한 줄 추가
                     report_fluxus_matrix[row_cursor][1] = alb
