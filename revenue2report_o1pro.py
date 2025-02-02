@@ -136,10 +136,63 @@ def show_detailed_verification():
             st.info("정산서 검증 데이터가 없습니다.")
         else:
             import pandas as pd
-            df = pd.DataFrame(rows)
 
+            # 1) rows를 아티스트별로 묶고, "공제내역" + "수익배분율"을 하나로 합침
+            #    { 아티스트명 : {"공제내역": {...}, "수익배분율": {...}} }
+            merged_dict = {}
+            for r in rows:
+                artist = r.get("아티스트","")
+                gubun  = r.get("구분","")
+                if artist not in merged_dict:
+                    merged_dict[artist] = {"공제내역": {}, "수익배분율": {}}
+                if gubun == "공제내역":
+                    merged_dict[artist]["공제내역"] = r
+                elif gubun == "수익배분율":
+                    merged_dict[artist]["수익배분율"] = r
+                # 혹시 "음원서비스별매출" 등 다른 구분이 섞여 있으면 여기서는 무시
+
+            # 2) 최종적으로는 "공제내역" 쪽에 "정산율(%)"을 합쳐서, 아티스트 1명당 1행 생성
+            merged_rows = []
+            for artist, sub in merged_dict.items():
+                row_c = sub["공제내역"]     # 공제내역
+                row_r = sub["수익배분율"]  # 수익배분율
+
+                if not row_c:
+                    # 만약 공제내역이 아예 없다면 스킵 (혹은 기본값)
+                    continue
+
+                # 새로 만들 행
+                new_row = {}
+
+                # (A) 소속 (예: 세션/딕셔너리 등에서 가져옴)
+                #     여기서는 st.session_state["artist_sosok_dict"][artist] 가 있다고 가정
+                sosok_map = st.session_state.get("artist_sosok_dict", {})
+                new_row["소속"] = ", ".join(sosok_map.get(artist, []))
+
+                # (B) 아티스트명
+                new_row["아티스트"] = artist
+
+                # (C) 기존 "공제내역"에서 뽑을 칼럼들
+                #     (원본_곡비, 정산서_곡비, match_곡비, 원본_공제금액, 정산서_공제금액, ...)
+                for col in [
+                    "원본_곡비","정산서_곡비","match_곡비",
+                    "원본_공제금액","정산서_공제금액","match_공제금액",
+                    "원본_공제후잔액","정산서_공제후잔액","match_공제후잔액"
+                ]:
+                    new_row[col] = row_c.get(col, None)
+
+                # (D) "수익배분율"에서 "원본_정산율(%)", "정산서_정산율(%)", "match_정산율"만 가져옴
+                new_row["원본_정산율(%)"]   = row_r.get("원본_정산율(%)", None)
+                new_row["정산서_정산율(%)"] = row_r.get("정산서_정산율(%)", None)
+                new_row["match_정산율"]     = row_r.get("match_정산율", None)
+
+                merged_rows.append(new_row)
+
+            # 3) 이제 merged_rows를 DataFrame으로 만들어 출력
+            df = pd.DataFrame(merged_rows)
+
+            # (E) 부울컬럼 하이라이트
             bool_cols = [c for c in df.columns if c.startswith("match_")]
-
             def highlight_boolean(val):
                 if val is True:
                     return "background-color: #AAFFAA"
@@ -148,19 +201,20 @@ def show_detailed_verification():
                 else:
                     return ""
 
-            int_columns = [
-                "원본_곡비", "정산서_곡비",
-                "원본_공제금액", "정산서_공제금액",
-                "원본_공제후잔액", "정산서_공제후잔액",
-                "원본_정산율(%)", "정산서_정산율(%)"
-            ]
-            format_dict = {col: "{:.0f}" for col in int_columns if col in df.columns}
+            # (F) 일부 숫자 칼럼에는 포맷 지정
+            format_dict = {
+                "원본_곡비": "{:.0f}", "정산서_곡비": "{:.0f}",
+                "원본_공제금액": "{:.0f}", "정산서_공제금액": "{:.0f}",
+                "원본_공제후잔액": "{:.0f}", "정산서_공제후잔액": "{:.0f}",
+                "원본_정산율(%)": "{:.0f}", "정산서_정산율(%)": "{:.0f}",
+            }
 
             st.dataframe(
                 df.style
-                  .format(format_dict)
-                  .applymap(highlight_boolean, subset=bool_cols)
+                .format(format_dict)
+                .applymap(highlight_boolean, subset=bool_cols)
             )
+
 
     with tabB:
         st.write("#### 세부매출 검증")
@@ -170,7 +224,76 @@ def show_detailed_verification():
         else:
             import pandas as pd
             df = pd.DataFrame(rows)
-            bool_cols = [c for c in df.columns if c.startswith("match_")]
+
+            # 1) 구분 값 치환 (input_online -> umag_integrated / fluxus_yt / fluxus_song)
+            if "구분" in df.columns:
+                df["구분"] = df["구분"].replace({
+                    "input_online revenue_umag_integrated": "umag_integrated",
+                    "input_online revenue_fluxus_yt": "fluxus_yt",
+                    "input_online revenue_fluxus_song": "fluxus_song"
+                })
+
+            # 2) fluxus_yt → '타이틀명'을 '서비스명'으로
+            if "타이틀명" in df.columns:
+                df.loc[df["구분"] == "fluxus_yt", "서비스명"] = df["타이틀명"]
+                df.drop(columns=["타이틀명"], inplace=True)
+
+            # 3) fluxus_song → '서비스 구분'을 '서비스명'으로
+            #    (혹시 "서비스 구분"이라는 칼럼이 있다면)
+            if "서비스 구분" in df.columns:
+                df.loc[df["구분"] == "fluxus_song", "서비스명"] = df["서비스 구분"]
+                df.drop(columns=["서비스 구분"], inplace=True)
+
+
+
+            # ----------------------------
+            # (추가) fluxus_song 앨범별로
+            #        "국내, 해외 플랫폼(전월)" 요약행 삽입
+            # ----------------------------
+            # df 안에는 컬럼이 ["아티스트", "앨범", "서비스명", ..., "원본_매출액", "정산서_매출액", ...] 등이 있다고 가정
+
+            # 2-1) fluxus_song만 필터
+            fluxus_song_mask = (df["구분"] == "fluxus_song")
+            df_fluxus_song = df[fluxus_song_mask]
+            df_other       = df[~fluxus_song_mask]
+
+            # 2-2) fluxus_song을 (아티스트, 앨범) 으로 그룹핑
+            new_rows = []
+            grouped = df_fluxus_song.groupby(["아티스트","앨범"], sort=False)
+
+            for (artist, album), group_df in grouped:
+                # (A) 먼저 group_df의 원래 행(각 트랙/서비스명 등)을 추가
+                for _, row in group_df.iterrows():
+                    new_rows.append(row)
+
+                # (B) group_df의 원본_매출액 합계, 정산서_매출액 합계를 구함
+                orig_sum = group_df["원본_매출액"].sum()
+                repo_sum = group_df["정산서_매출액"].sum()
+
+                # (C) "국내, 해외 플랫폼(전월)" 요약 행 생성
+                summary_row = {
+                    "아티스트": artist,
+                    "앨범": album,
+                    "구분": "fluxus_song",
+                    "서비스명": "국내, 해외 플랫폼(전월)",
+                    # 원본_매출액 / 정산서_매출액 은 합계 값
+                    "원본_매출액": orig_sum,
+                    "정산서_매출액": repo_sum,
+                }
+                # 필요하다면 다른 컬럼(예: match_매출액)은 False or None으로 넣어둘 수도 있음
+                new_rows.append(summary_row)
+
+            # 2-3) 기존 fluxus_song이 아닌 행(df_other)도 붙여서 최종 df_new를 구성
+            df_result = pd.concat([df_other, pd.DataFrame(new_rows)], ignore_index=True, sort=False)
+
+            # (원한다면) df_result를 앨범명/아티스트명 순으로 다시 정렬
+            # 여기서는 "구분" 순서도 고려할 수 있지만, 간단히 "아티스트, 앨범, 서비스명" 정도만
+            df_result.sort_values(by=["구분","아티스트","앨범","서비스명"], inplace=True, ignore_index=True)
+
+            # 이제 df_result가 "국내, 해외 플랫폼(전월)" 요약 행이 삽입된 최종본
+
+            # 3) boolean highlighting
+            bool_cols = [c for c in df_result.columns if c.startswith("match_")]
 
             def highlight_boolean(val):
                 if val is True:
@@ -180,15 +303,30 @@ def show_detailed_verification():
                 else:
                     return ""
 
+            # (정수/금액) 칼럼 포맷
             int_columns = ["원본_매출액", "정산서_매출액"]
-            format_dict = {col: "{:.0f}" for col in int_columns if col in df.columns}
+            format_dict = {col: "{:.0f}" for col in int_columns if col in df_result.columns}
 
+            # 최종 dataframe 시각화
             st.dataframe(
-                df.style
-                  .format(format_dict)
-                  .applymap(highlight_boolean, subset=bool_cols)
+                df_result.style
+                         .format(format_dict)
+                         .applymap(highlight_boolean, subset=bool_cols)
             )
 
+            # 4) 아티스트/앨범/서비스명 폭 넓히기
+            df_styled = (
+                df_result.style
+                .format(format_dict)
+                .applymap(highlight_boolean, subset=bool_cols)
+                .set_properties(
+                    **{
+                        "width": "180px"
+                    },
+                    subset=["아티스트","앨범","서비스명"]
+                )
+            )
+            st.dataframe(df_styled)
 
 def compare_artists(song_artists, revenue_artists):
     set_song = set(song_artists)
@@ -689,15 +827,15 @@ def section_zero_prepare_song_cost():
             a_fs = clean_artist_name(row_fs[col_artist_fs])
 
             # 소문자로 변환한 값
-            a_lower = a_u.lower()
+            a_lower = a_fs.lower()
             # (1) 아티스트명이 공란, (2) 아티스트명 안에 '합계','총계','total' 포함, 
             # (3) 전부 숫자인 경우 -> 합계행으로 보고 스킵
             if (
-                not a_u 
-                or '합계' in a_u 
-                or '총계' in a_u 
+                not a_fs 
+                or '합계' in a_lower 
+                or '총계' in a_lower 
                 or 'total' in a_lower 
-                or a_u.isdigit()
+                or a_fs.isdigit()
             ):
                 continue
 
@@ -706,6 +844,7 @@ def section_zero_prepare_song_cost():
             except:
                 val_fs = 0.0
             sum_flux_song_dict[a_fs] += val_fs
+
 
         # ---------------------------
         # 0-E) fluxus_yt read
@@ -1153,6 +1292,26 @@ def section_two_sheet_link_and_verification():
             if double_sosok_list:
                 st.warning(f"2개 소속 중복으로 작업 제외된 아티스트 목록: {double_sosok_list}")
                 st.info("해당 아티스트는 '2개 소속이 되어 진행이 되지 않았습니다' 문구가 노출됩니다.")
+
+            # 추가: 검증 요약 표시
+            check_dict = st.session_state.get("check_dict", {})
+            ver_sum = check_dict.get("verification_summary", {})
+            total_errors = ver_sum.get("total_errors", 0)
+            artist_err_list = ver_sum.get("artist_error_list", [])
+
+            st.markdown("### 검증 요약")
+
+            if total_errors == 0:
+                st.success("모든 수치가 정상적으로 일치합니다!")
+            else:
+                st.error(f"총 {total_errors}건의 불일치 발생")
+                if artist_err_list:
+                    unique_artists = list(set(artist_err_list))
+                    st.warning(f"다음 아티스트에서 불일치가 발생함: {unique_artists}")
+
+                # 만약 좀 더 자세히 어떤 항목이 틀렸는지 짧게 보여주고 싶다면,
+                # check_dict["details_verification"]["정산서"] / ["세부매출"] 중에서 match_XXX=False 인 것만 필터링해
+                # 간략표를 띄워줄 수도 있습니다.
 
         with tab2:
             st.write("### 세부 검증 내용")
@@ -4948,6 +5107,9 @@ def generate_report(
 
     # 루프 끝나면 처리 완료 메시지 (원한다면)
     artist_placeholder.success("모든 아티스트 처리 완료!")
+
+    # (추가) artist_sosok_dict를 세션 상태에 저장
+    st.session_state["artist_sosok_dict"] = artist_sosok_dict
 
     # ----------------------
     # 다음달 탭 복제 (옵션)
